@@ -1,0 +1,7 @@
+# Generated Vivado project (recreate with tcl/mclp.tcl)
+build/
+.Xil/
+*.jou
+*.log
+*.str
+dfx_runtime.txt
