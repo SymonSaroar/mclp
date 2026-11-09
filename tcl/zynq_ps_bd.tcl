@@ -131,6 +131,10 @@ set bCheckIPs 1
 if { $bCheckIPs == 1 } {
    set list_check_ips "\ 
 xilinx.com:ip:processing_system7:5.5\
+xilinx.com:ip:proc_sys_reset:5.0\
+xilinx.com:ip:axi_dma:7.1\
+xilinx.com:ip:xlconcat:2.1\
+xilinx.com:ip:smartconnect:1.0\
 "
 
    set list_ips_missing ""
@@ -198,112 +202,35 @@ proc create_root_design { parentCell } {
 
   set FIXED_IO [ create_bd_intf_port -mode Master -vlnv xilinx.com:display_processing_system7:fixedio_rtl:1.0 FIXED_IO ]
 
-  set DMA0_ACK_0 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:axis_rtl:1.0 DMA0_ACK_0 ]
+  set M_AXI_REGS [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_REGS ]
+  set_property -dict [ list \
+   CONFIG.ADDR_WIDTH {32} \
+   CONFIG.DATA_WIDTH {32} \
+   CONFIG.PROTOCOL {AXI4LITE} \
+   ] $M_AXI_REGS
 
-  set DMA0_REQ_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 DMA0_REQ_0 ]
+  set S_AXIS_RAW [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS_RAW ]
   set_property -dict [ list \
    CONFIG.HAS_TKEEP {0} \
    CONFIG.HAS_TLAST {1} \
    CONFIG.HAS_TREADY {1} \
    CONFIG.HAS_TSTRB {0} \
    CONFIG.LAYERED_METADATA {undef} \
-   CONFIG.TDATA_NUM_BYTES {0} \
+   CONFIG.TDATA_NUM_BYTES {8} \
    CONFIG.TDEST_WIDTH {0} \
    CONFIG.TID_WIDTH {0} \
-   CONFIG.TUSER_WIDTH {2} \
-   ] $DMA0_REQ_0
-
-  set M_AXI_GP0_0 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_GP0_0 ]
-  set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {32} \
-   CONFIG.DATA_WIDTH {32} \
-   CONFIG.HAS_REGION {0} \
-   CONFIG.NUM_READ_OUTSTANDING {8} \
-   CONFIG.NUM_WRITE_OUTSTANDING {8} \
-   CONFIG.PROTOCOL {AXI3} \
-   ] $M_AXI_GP0_0
-
-  set S_AXI_ACP_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI_ACP_0 ]
-  set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {32} \
-   CONFIG.ARUSER_WIDTH {5} \
-   CONFIG.AWUSER_WIDTH {5} \
-   CONFIG.BUSER_WIDTH {0} \
-   CONFIG.DATA_WIDTH {64} \
-   CONFIG.HAS_BRESP {1} \
-   CONFIG.HAS_BURST {1} \
-   CONFIG.HAS_CACHE {1} \
-   CONFIG.HAS_LOCK {1} \
-   CONFIG.HAS_PROT {1} \
-   CONFIG.HAS_QOS {1} \
-   CONFIG.HAS_REGION {0} \
-   CONFIG.HAS_RRESP {1} \
-   CONFIG.HAS_WSTRB {1} \
-   CONFIG.ID_WIDTH {3} \
-   CONFIG.MAX_BURST_LENGTH {16} \
-   CONFIG.NUM_READ_OUTSTANDING {8} \
-   CONFIG.NUM_READ_THREADS {1} \
-   CONFIG.NUM_WRITE_OUTSTANDING {8} \
-   CONFIG.NUM_WRITE_THREADS {1} \
-   CONFIG.PROTOCOL {AXI3} \
-   CONFIG.READ_WRITE_MODE {READ_WRITE} \
-   CONFIG.RUSER_BITS_PER_BYTE {0} \
-   CONFIG.RUSER_WIDTH {0} \
-   CONFIG.SUPPORTS_NARROW_BURST {1} \
-   CONFIG.WUSER_BITS_PER_BYTE {0} \
-   CONFIG.WUSER_WIDTH {0} \
-   ] $S_AXI_ACP_0
-
-  set S_AXI_HP0_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI_HP0_0 ]
-  set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {32} \
-   CONFIG.ARUSER_WIDTH {0} \
-   CONFIG.AWUSER_WIDTH {0} \
-   CONFIG.BUSER_WIDTH {0} \
-   CONFIG.DATA_WIDTH {64} \
-   CONFIG.HAS_BRESP {1} \
-   CONFIG.HAS_BURST {1} \
-   CONFIG.HAS_CACHE {1} \
-   CONFIG.HAS_LOCK {1} \
-   CONFIG.HAS_PROT {1} \
-   CONFIG.HAS_QOS {1} \
-   CONFIG.HAS_REGION {0} \
-   CONFIG.HAS_RRESP {1} \
-   CONFIG.HAS_WSTRB {1} \
-   CONFIG.ID_WIDTH {6} \
-   CONFIG.MAX_BURST_LENGTH {16} \
-   CONFIG.NUM_READ_OUTSTANDING {8} \
-   CONFIG.NUM_READ_THREADS {1} \
-   CONFIG.NUM_WRITE_OUTSTANDING {8} \
-   CONFIG.NUM_WRITE_THREADS {1} \
-   CONFIG.PROTOCOL {AXI3} \
-   CONFIG.READ_WRITE_MODE {READ_WRITE} \
-   CONFIG.RUSER_BITS_PER_BYTE {0} \
-   CONFIG.RUSER_WIDTH {0} \
-   CONFIG.SUPPORTS_NARROW_BURST {1} \
-   CONFIG.WUSER_BITS_PER_BYTE {0} \
-   CONFIG.WUSER_WIDTH {0} \
-   ] $S_AXI_HP0_0
-
-  set S_AXI_HP0_FIFO_CTRL_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:display_processing_system7:hpstatusctrl_rtl:1.0 S_AXI_HP0_FIFO_CTRL_0 ]
-
-  set USBIND_0_0 [ create_bd_intf_port -mode Master -vlnv xilinx.com:display_processing_system7:usbctrl_rtl:1.0 USBIND_0_0 ]
+   CONFIG.TUSER_WIDTH {0} \
+   ] $S_AXIS_RAW
 
 
   # Create ports
-  set DMA0_ACLK_0 [ create_bd_port -dir I -type clk DMA0_ACLK_0 ]
-  set FCLK_CLK0_0 [ create_bd_port -dir O -type clk FCLK_CLK0_0 ]
-  set FCLK_RESET0_N_0 [ create_bd_port -dir O -type rst FCLK_RESET0_N_0 ]
-  set IRQ_F2P_0 [ create_bd_port -dir I -from 0 -to 0 -type intr IRQ_F2P_0 ]
+  set FCLK_CLK0 [ create_bd_port -dir O -type clk FCLK_CLK0 ]
   set_property -dict [ list \
-   CONFIG.PortWidth {1} \
- ] $IRQ_F2P_0
-  set M_AXI_GP0_ACLK_0 [ create_bd_port -dir I -type clk M_AXI_GP0_ACLK_0 ]
-  set S_AXI_ACP_ACLK_0 [ create_bd_port -dir I -type clk S_AXI_ACP_ACLK_0 ]
-  set S_AXI_HP0_ACLK_0 [ create_bd_port -dir I -type clk S_AXI_HP0_ACLK_0 ]
-  set TTC0_WAVE0_OUT_0 [ create_bd_port -dir O TTC0_WAVE0_OUT_0 ]
-  set TTC0_WAVE1_OUT_0 [ create_bd_port -dir O TTC0_WAVE1_OUT_0 ]
-  set TTC0_WAVE2_OUT_0 [ create_bd_port -dir O TTC0_WAVE2_OUT_0 ]
+   CONFIG.ASSOCIATED_BUSIF {M_AXI_REGS:S_AXIS_RAW} \
+   CONFIG.ASSOCIATED_RESET {peripheral_aresetn} \
+ ] $FCLK_CLK0
+  set peripheral_aresetn [ create_bd_port -dir O -from 0 -to 0 -type rst peripheral_aresetn ]
+  set mclp_irq [ create_bd_port -dir I -type intr mclp_irq ]
 
   # Create instance: processing_system7_0, and set properties
   set processing_system7_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 processing_system7_0 ]
@@ -587,54 +514,90 @@ proc create_root_design { parentCell } {
     CONFIG.PCW_USB0_USB0_IO {MIO 28 .. 39} \
     CONFIG.PCW_USB_RESET_ENABLE {1} \
     CONFIG.PCW_USB_RESET_SELECT {Share reset pin} \
-    CONFIG.PCW_USE_DMA0 {1} \
+    CONFIG.PCW_USE_DMA0 {0} \
     CONFIG.PCW_USE_FABRIC_INTERRUPT {1} \
-    CONFIG.PCW_USE_S_AXI_ACP {1} \
+    CONFIG.PCW_USE_S_AXI_ACP {0} \
     CONFIG.PCW_USE_S_AXI_HP0 {1} \
     CONFIG.preset {ZC702} \
   ] $processing_system7_0
 
 
+  # Create instance: rst_ps7, and set properties
+  set rst_ps7 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7 ]
+
+  # Create instance: axi_dma, and set properties
+  set axi_dma [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_dma:7.1 axi_dma ]
+  set_property -dict [list \
+    CONFIG.c_include_mm2s {0} \
+    CONFIG.c_include_sg {1} \
+    CONFIG.c_m_axi_s2mm_data_width {64} \
+    CONFIG.c_s2mm_burst_size {16} \
+    CONFIG.c_s_axis_s2mm_tdata_width {64} \
+    CONFIG.c_sg_include_stscntrl_strm {0} \
+    CONFIG.c_sg_length_width {16} \
+  ] $axi_dma
+
+
+  # Create instance: irq_concat, and set properties
+  set irq_concat [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat:2.1 irq_concat ]
+  set_property CONFIG.NUM_PORTS {2} $irq_concat
+
+
+  # Create instance: smartconnect_0, and set properties
+  set smartconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_0 ]
+  set_property -dict [list \
+    CONFIG.NUM_MI {2} \
+    CONFIG.NUM_SI {1} \
+  ] $smartconnect_0
+
+
+  # Create instance: smartconnect_1, and set properties
+  set smartconnect_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_1 ]
+  set_property CONFIG.NUM_SI {2} $smartconnect_1
+
+
   # Create interface connections
-  connect_bd_intf_net -intf_net DMA0_REQ_0_1 [get_bd_intf_ports DMA0_REQ_0] [get_bd_intf_pins processing_system7_0/DMA0_REQ]
-  connect_bd_intf_net -intf_net S_AXI_ACP_0_1 [get_bd_intf_ports S_AXI_ACP_0] [get_bd_intf_pins processing_system7_0/S_AXI_ACP]
-  connect_bd_intf_net -intf_net S_AXI_HP0_0_1 [get_bd_intf_ports S_AXI_HP0_0] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
-  connect_bd_intf_net -intf_net S_AXI_HP0_FIFO_CTRL_0_1 [get_bd_intf_ports S_AXI_HP0_FIFO_CTRL_0] [get_bd_intf_pins processing_system7_0/S_AXI_HP0_FIFO_CTRL]
+  connect_bd_intf_net -intf_net S_AXIS_RAW_1 [get_bd_intf_ports S_AXIS_RAW] [get_bd_intf_pins axi_dma/S_AXIS_S2MM]
+  connect_bd_intf_net -intf_net axi_dma_M_AXI_S2MM [get_bd_intf_pins axi_dma/M_AXI_S2MM] [get_bd_intf_pins smartconnect_1/S01_AXI]
+  connect_bd_intf_net -intf_net axi_dma_M_AXI_SG [get_bd_intf_pins axi_dma/M_AXI_SG] [get_bd_intf_pins smartconnect_1/S00_AXI]
   connect_bd_intf_net -intf_net processing_system7_0_DDR [get_bd_intf_ports DDR] [get_bd_intf_pins processing_system7_0/DDR]
-  connect_bd_intf_net -intf_net processing_system7_0_DMA0_ACK [get_bd_intf_ports DMA0_ACK_0] [get_bd_intf_pins processing_system7_0/DMA0_ACK]
   connect_bd_intf_net -intf_net processing_system7_0_FIXED_IO [get_bd_intf_ports FIXED_IO] [get_bd_intf_pins processing_system7_0/FIXED_IO]
-  connect_bd_intf_net -intf_net processing_system7_0_M_AXI_GP0 [get_bd_intf_ports M_AXI_GP0_0] [get_bd_intf_pins processing_system7_0/M_AXI_GP0]
-  connect_bd_intf_net -intf_net processing_system7_0_USBIND_0 [get_bd_intf_ports USBIND_0_0] [get_bd_intf_pins processing_system7_0/USBIND_0]
+  connect_bd_intf_net -intf_net processing_system7_0_M_AXI_GP0 [get_bd_intf_pins processing_system7_0/M_AXI_GP0] [get_bd_intf_pins smartconnect_0/S00_AXI]
+  connect_bd_intf_net -intf_net smartconnect_0_M00_AXI [get_bd_intf_ports M_AXI_REGS] [get_bd_intf_pins smartconnect_0/M00_AXI]
+  connect_bd_intf_net -intf_net smartconnect_0_M01_AXI [get_bd_intf_pins smartconnect_0/M01_AXI] [get_bd_intf_pins axi_dma/S_AXI_LITE]
+  connect_bd_intf_net -intf_net smartconnect_1_M00_AXI [get_bd_intf_pins smartconnect_1/M00_AXI] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
 
   # Create port connections
-  connect_bd_net -net DMA0_ACLK_0_1  [get_bd_ports DMA0_ACLK_0] \
-  [get_bd_pins processing_system7_0/DMA0_ACLK]
-  connect_bd_net -net IRQ_F2P_0_1  [get_bd_ports IRQ_F2P_0] \
+  connect_bd_net -net axi_dma_s2mm_introut  [get_bd_pins axi_dma/s2mm_introut] \
+  [get_bd_pins irq_concat/In0]
+  connect_bd_net -net irq_concat_dout  [get_bd_pins irq_concat/dout] \
   [get_bd_pins processing_system7_0/IRQ_F2P]
-  connect_bd_net -net M_AXI_GP0_ACLK_0_1  [get_bd_ports M_AXI_GP0_ACLK_0] \
-  [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK]
-  connect_bd_net -net S_AXI_ACP_ACLK_0_1  [get_bd_ports S_AXI_ACP_ACLK_0] \
-  [get_bd_pins processing_system7_0/S_AXI_ACP_ACLK]
-  connect_bd_net -net S_AXI_HP0_ACLK_0_1  [get_bd_ports S_AXI_HP0_ACLK_0] \
-  [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK]
   connect_bd_net -net processing_system7_0_FCLK_CLK0  [get_bd_pins processing_system7_0/FCLK_CLK0] \
-  [get_bd_ports FCLK_CLK0_0]
+  [get_bd_ports FCLK_CLK0] \
+  [get_bd_pins rst_ps7/slowest_sync_clk] \
+  [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] \
+  [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] \
+  [get_bd_pins axi_dma/s_axi_lite_aclk] \
+  [get_bd_pins axi_dma/m_axi_sg_aclk] \
+  [get_bd_pins axi_dma/m_axi_s2mm_aclk] \
+  [get_bd_pins smartconnect_0/aclk] \
+  [get_bd_pins smartconnect_1/aclk]
   connect_bd_net -net processing_system7_0_FCLK_RESET0_N  [get_bd_pins processing_system7_0/FCLK_RESET0_N] \
-  [get_bd_ports FCLK_RESET0_N_0]
-  connect_bd_net -net processing_system7_0_TTC0_WAVE0_OUT  [get_bd_pins processing_system7_0/TTC0_WAVE0_OUT] \
-  [get_bd_ports TTC0_WAVE0_OUT_0]
-  connect_bd_net -net processing_system7_0_TTC0_WAVE1_OUT  [get_bd_pins processing_system7_0/TTC0_WAVE1_OUT] \
-  [get_bd_ports TTC0_WAVE1_OUT_0]
-  connect_bd_net -net processing_system7_0_TTC0_WAVE2_OUT  [get_bd_pins processing_system7_0/TTC0_WAVE2_OUT] \
-  [get_bd_ports TTC0_WAVE2_OUT_0]
+  [get_bd_pins rst_ps7/ext_reset_in]
+  connect_bd_net -net rst_ps7_interconnect_aresetn  [get_bd_pins rst_ps7/interconnect_aresetn] \
+  [get_bd_pins smartconnect_0/aresetn] \
+  [get_bd_pins smartconnect_1/aresetn]
+  connect_bd_net -net rst_ps7_peripheral_aresetn  [get_bd_pins rst_ps7/peripheral_aresetn] \
+  [get_bd_ports peripheral_aresetn] \
+  [get_bd_pins axi_dma/axi_resetn]
+  connect_bd_net -net mclp_irq_1  [get_bd_ports mclp_irq] \
+  [get_bd_pins irq_concat/In1]
 
   # Create address segments
-  assign_bd_address -offset 0x43C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs M_AXI_GP0_0/Reg] -force
-  assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces S_AXI_ACP_0] [get_bd_addr_segs processing_system7_0/S_AXI_ACP/ACP_DDR_LOWOCM] -force
-  assign_bd_address -offset 0xE0000000 -range 0x00400000 -target_address_space [get_bd_addr_spaces S_AXI_ACP_0] [get_bd_addr_segs processing_system7_0/S_AXI_ACP/ACP_IOP] -force
-  assign_bd_address -offset 0x40000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces S_AXI_ACP_0] [get_bd_addr_segs processing_system7_0/S_AXI_ACP/ACP_M_AXI_GP0] -force
-  assign_bd_address -offset 0xFC000000 -range 0x01000000 -target_address_space [get_bd_addr_spaces S_AXI_ACP_0] [get_bd_addr_segs processing_system7_0/S_AXI_ACP/ACP_QSPI_LINEAR] -force
-  assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces S_AXI_HP0_0] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] -force
+  assign_bd_address -offset 0x43C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs M_AXI_REGS/Reg] -force
+  assign_bd_address -offset 0x40400000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs axi_dma/S_AXI_LITE/Reg] -force
+  assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces axi_dma/Data_S2MM] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] -force
+  assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces axi_dma/Data_SG] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] -force
 
 
   # Restore current instance

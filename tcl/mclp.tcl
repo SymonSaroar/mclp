@@ -6,7 +6,8 @@
 #   vivado -mode batch -source tcl/mclp.tcl -tclargs --project_name foo --build_dir /tmp/x
 #
 # Everything under build/ is generated and can be deleted at any time.
-# Sources live in rtl/ xdc/ xci/ tb/ tcl/*_bd.tcl and are picked up by glob.
+# Sources are picked up by glob: rtl/, xdc/, coeff/*.mem, tb/system/ (sim only), tcl/*_bd.tcl.
+# AMD IP outside the block design comes from tcl/ip.tcl.
 
 # ==============================================================================
 # CONFIGURATION
@@ -17,8 +18,7 @@ set proj_name    "mclp"
 set build_dir    "$origin_dir/build"
 set part         "xc7z020clg484-1"
 set board_part   "xilinx.com:zc702:part0:1.4"
-# Top: the block-design wrapper.
-set top_module   "zynq_ps_wrapper"
+set top_module   "mclp_top"
 
 proc print_help {} {
 	puts "Usage: vivado -mode batch -source tcl/mclp.tcl \[-tclargs <options>\]"
@@ -62,14 +62,16 @@ proc src {pattern} { glob -nocomplain -directory $::origin_dir {*}$pattern }
 
 set rtl [src {rtl/*.v rtl/*.sv rtl/*.vhd rtl/*.vhdl}]
 set xdc [src {xdc/*.xdc}]
-set xci [src {xci/*.xci}]
-set tb  [src {tb/*.v tb/*.sv tb/*.vhd tb/*.vhdl}]
+set mem [src {coeff/*.mem}]
+set tb  [src {tb/system/*.v tb/system/*.sv}]
 
 if {[llength $rtl]} { add_files -norecurse -fileset sources_1 $rtl }
 if {[llength $xdc]} { add_files -norecurse -fileset constrs_1 $xdc }
-if {[llength $xci]} { import_files -fileset sources_1 $xci }
+if {[llength $mem]} { add_files -norecurse -fileset sources_1 $mem }
 if {[llength $tb]}  { add_files -norecurse -fileset sim_1 $tb }
-puts "Added [llength $rtl] rtl, [llength $xdc] xdc, [llength $xci] xci, [llength $tb] tb files"
+puts "Added [llength $rtl] rtl, [llength $xdc] xdc, [llength $mem] mem, [llength $tb] tb files"
+
+source $origin_dir/tcl/ip.tcl
 
 # ==============================================================================
 # BLOCK DESIGNS  (tcl/*_bd.tcl, written by: write_bd_tcl -force tcl/<name>_bd.tcl)
