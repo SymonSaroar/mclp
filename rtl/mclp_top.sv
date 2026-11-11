@@ -3,9 +3,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 // mclp_top
 // MCLP top level: instances and wiring only.
-// Clock domains: clk_axi (FCLK0, 100 MHz) for the PS, register file and DMA; clk_spi (20 MHz) and
-// clk_dsp (50 MHz) from the MMCM. Control and status cross in mclp_registers. The ADC pins and
-// S_AXIS_RAW are idle.
+// Clock domains: clk_axi (FCLK0, 100 MHz) for the PS, register file and DMA; clk_spi (20 MHz) for the
+// AD7190 front end; clk_dsp (50 MHz) for processing. Control and status cross in mclp_registers, the
+// sample stream through the XPM FIFO here, drained at its output. S_AXIS_RAW is idle.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_top (
 	// PS DDR and fixed IO
@@ -74,6 +74,23 @@ module mclp_top (
 	wire          rst_dsp   = !rstn_dsp;
 	wire          arst_axi  = !rst_axi_n[0];
 	wire          rstn_axi  = !rst_axi;
+
+	// Register file to front end (clk_spi)
+	wire          spi_enable;
+	wire          spi_loopback;
+	wire [31:0]   spi_loopback_cfg;
+	wire [23:0]   spi_loopback_value;
+	wire          spi_seq_start;
+	wire [7:0]    spi_seq_addr;
+	wire [31:0]   spi_seq_data;
+	wire          spi_seq_busy;
+	wire [255:0]  spi_seq_resp;
+
+	// Sample stream (clk_spi -> clk_dsp)
+	wire          fe_tvalid;
+	wire          fe_tready;
+	wire [79:0]   fe_tdata;
+	wire          fe_tlast;
 
 /////////////////////////////////////////////////////////////////////////////
 //PS block design
@@ -215,15 +232,15 @@ module mclp_top (
 
 		// Front end (clk_spi)
 		.clk_spi(clk_spi),
-		.spi_enable(),
-		.spi_loopback(),
-		.spi_loopback_cfg(),
-		.spi_loopback_value(),
-		.spi_seq_start(),
-		.spi_seq_addr(8'd0),
-		.spi_seq_data(),
-		.spi_seq_busy(1'b0),
-		.spi_seq_resp(256'd0),
+		.spi_enable(spi_enable),
+		.spi_loopback(spi_loopback),
+		.spi_loopback_cfg(spi_loopback_cfg),
+		.spi_loopback_value(spi_loopback_value),
+		.spi_seq_start(spi_seq_start),
+		.spi_seq_addr(spi_seq_addr),
+		.spi_seq_data(spi_seq_data),
+		.spi_seq_busy(spi_seq_busy),
+		.spi_seq_resp(spi_seq_resp),
 
 		// Processing (clk_dsp)
 		.clk_dsp(clk_dsp),
@@ -261,12 +278,74 @@ module mclp_top (
 	);
 
 /////////////////////////////////////////////////////////////////////////////
-//ADC pins idle
+//AD7190 front end (clk_spi)
 /////////////////////////////////////////////////////////////////////////////
-	assign adc_sclk   = 1'b1;
-	assign adc_din    = 1'b0;
-	assign adc_cs_n   = 1'b1;
-	assign adc_sync_n = 1'b1;
+	afe_frontend afe_frontend_0 (
+		.clk(clk_spi),
+		.rst(rst_spi),
+		.enable(spi_enable),
+		.loopback(spi_loopback),
+		.seq_start(spi_seq_start),
+		.loopback_cfg(spi_loopback_cfg),
+		.loopback_value(spi_loopback_value),
+		.seq_addr(spi_seq_addr),
+		.seq_q(spi_seq_data),
+		.seq_busy(spi_seq_busy),
+		.seq_resp(spi_seq_resp),
+		.adc_sclk(adc_sclk),
+		.adc_din(adc_din),
+		.adc_cs_n(adc_cs_n),
+		.adc_sync_n(adc_sync_n),
+		.adc_dout(adc_dout),
+		.m_valid(fe_tvalid),
+		.m_ready(fe_tready),
+		.m_data(fe_tdata),
+		.m_last(fe_tlast)
+	);
+
+	// CDC FIFO 1: samples clk_spi -> clk_dsp, {ts, flags, ch, data}
+	xpm_fifo_axis #(
+		.CDC_SYNC_STAGES(2),            // DECIMAL
+		.CLOCKING_MODE("independent_clock"),
+		.FIFO_DEPTH(64),                // DECIMAL
+		.FIFO_MEMORY_TYPE("auto"),
+		.PACKET_FIFO("false"),
+		.PROG_FULL_THRESH(10),          // DECIMAL
+		.TDATA_WIDTH(80),               // DECIMAL
+		.USE_ADV_FEATURES("1000")
+	) xpm_fifo_samples_inst (
+		.s_aresetn(rstn_spi),
+		.s_aclk(clk_spi),
+		.m_aclk(clk_dsp),
+		.s_axis_tvalid(fe_tvalid),
+		.s_axis_tready(fe_tready),
+		.s_axis_tdata(fe_tdata),
+		.s_axis_tstrb({10{1'b1}}),
+		.s_axis_tkeep({10{1'b1}}),
+		.s_axis_tlast(fe_tlast),
+		.s_axis_tid(1'b0),
+		.s_axis_tdest(1'b0),
+		.s_axis_tuser(1'b0),
+		.m_axis_tvalid(),
+		.m_axis_tready(1'b1),             // no consumer: samples are dropped
+		.m_axis_tdata(),
+		.m_axis_tstrb(),
+		.m_axis_tkeep(),
+		.m_axis_tlast(),
+		.m_axis_tid(),
+		.m_axis_tdest(),
+		.m_axis_tuser(),
+		.prog_full_axis(),
+		.wr_data_count_axis(),
+		.almost_full_axis(),
+		.prog_empty_axis(),
+		.rd_data_count_axis(),
+		.almost_empty_axis(),
+		.injectsbiterr_axis(1'b0),
+		.injectdbiterr_axis(1'b0),
+		.sbiterr_axis(),
+		.dbiterr_axis()
+	);
 
 endmodule
 

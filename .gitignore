@@ -5,3 +5,4 @@ build/
 *.log
 *.str
 dfx_runtime.txt
+__pycache__/

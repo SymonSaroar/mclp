@@ -1,0 +1,42 @@
+"""AD7190 power-up command list for the sequencer RAM, and the unity gain/trim image.
+
+Writes seq_init.mem (two 32-bit words per command, one word per line, as XPM MEMORY_INIT_FILE expects)
+and unity8.mem (eight words of 1.0 in Q2.30).
+
+    python coeff/seq_init.py
+"""
+from pathlib import Path
+
+END, XFER, SYNC, WAIT_US, WAIT_RDY, STREAM = range(6)
+
+CONFIG    = 0x00_0157    # CH0 (AIN1-AIN2), REFDET, BUF, bipolar, gain 128
+MODE_CONT = 0x14_2001    # continuous conversion, DAT_STA, clock on MCLK2, sinc4, ENPAR, FS = 1 (4800 SPS)
+MODE_ZCAL = 0x94_2001    # MD = 100: internal zero-scale calibration, same clock and filter
+
+
+def cmd(op, ntx=0, nrx=0, arg=0, tx=0):
+    return [(op << 28) | (ntx << 22) | (nrx << 16) | arg, tx]
+
+
+INIT = [
+    cmd(XFER, ntx=32, tx=0xFFFF_FFFF),       # 32 ones
+    cmd(XFER, ntx=32, tx=0xFFFF_FFFF),       # 40+ ones reset the serial interface and registers
+    cmd(WAIT_US, arg=600),                   # reset needs 500 us
+    cmd(XFER, ntx=8, nrx=8, tx=0x6000_0000), # read ID; answers land in SEQ_RESP, low nibble 4
+    cmd(XFER, ntx=32, tx=0x1000_0000 | CONFIG),
+    cmd(XFER, ntx=32, tx=0x0800_0000 | MODE_ZCAL),
+    cmd(WAIT_US, arg=10),                    # RDY rises when the calibration starts
+    cmd(WAIT_RDY),                           # RDY low: calibration done, chips idle
+    cmd(XFER, ntx=32, tx=0x0800_0000 | MODE_CONT),
+    cmd(SYNC),                               # all chips restart their filters together
+    cmd(XFER, ntx=8, tx=0x5C00_0000),        # enter continuous read
+    cmd(STREAM),
+]
+
+if __name__ == "__main__":
+    here = Path(__file__).parent
+    words = [w for c in INIT for w in c]
+    assert words[:2] == [0x1800_0000, 0xFFFF_FFFF] and words[-2] == 0x5000_0000
+    (here / "seq_init.mem").write_text("".join(f"{w:08x}\n" for w in words))
+    (here / "unity8.mem").write_text("40000000\n" * 8)
+    print(f"{len(INIT)} commands, {len(words)} words")
