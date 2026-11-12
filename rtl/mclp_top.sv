@@ -5,7 +5,7 @@
 // MCLP top level: instances and wiring only.
 // Clock domains: clk_axi (FCLK0, 100 MHz) for the PS, register file and DMA; clk_spi (20 MHz) for the
 // AD7190 front end; clk_dsp (50 MHz) for processing. Control and status cross in mclp_registers, the
-// sample stream through the XPM FIFO here, drained at its output. S_AXIS_RAW is idle.
+// sample stream through the XPM FIFO here. S_AXIS_RAW is idle.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_top (
 	// PS DDR and fixed IO
@@ -86,11 +86,39 @@ module mclp_top (
 	wire          spi_seq_busy;
 	wire [255:0]  spi_seq_resp;
 
+	// Register file to processing (clk_dsp)
+	wire [31:0]   dsp_stab_band;
+	wire [31:0]   dsp_stab_count;
+	wire [31:0]   dsp_wim_enter;
+	wire [31:0]   dsp_wim_exit;
+	wire [31:0]   dsp_wim_settle;
+	wire [31:0]   dsp_result_decim;
+	wire          dsp_fir_reload;
+	wire [2:0]    dsp_gain_ch;
+	wire [31:0]   dsp_gain;
+	wire [31:0]   dsp_offset;
+	wire [2:0]    dsp_trim_ch;
+	wire [31:0]   dsp_trim;
+	wire [5:0]    dsp_fir_addr;
+	wire [31:0]   dsp_fir_coef;
+	wire          dsp_result_new;
+	wire [31:0]   dsp_result;
+	wire          dsp_wim_new;
+	wire [63:0]   dsp_wim_sum;
+	wire [31:0]   dsp_wim_count;
+	wire          dsp_stable;
+	wire          dsp_overload;
+	wire          dsp_reload_busy;
+
 	// Sample stream (clk_spi -> clk_dsp)
 	wire          fe_tvalid;
 	wire          fe_tready;
 	wire [79:0]   fe_tdata;
 	wire          fe_tlast;
+	wire          smp_tvalid;
+	wire          smp_tready;
+	wire [79:0]   smp_tdata;
+	wire          smp_tlast;
 
 /////////////////////////////////////////////////////////////////////////////
 //PS block design
@@ -245,34 +273,34 @@ module mclp_top (
 		// Processing (clk_dsp)
 		.clk_dsp(clk_dsp),
 		.dsp_rst(rst_dsp),
-		.dsp_stab_band(),
-		.dsp_stab_count(),
-		.dsp_wim_enter(),
-		.dsp_wim_exit(),
-		.dsp_wim_settle(),
-		.dsp_result_decim(),
+		.dsp_stab_band(dsp_stab_band),
+		.dsp_stab_count(dsp_stab_count),
+		.dsp_wim_enter(dsp_wim_enter),
+		.dsp_wim_exit(dsp_wim_exit),
+		.dsp_wim_settle(dsp_wim_settle),
+		.dsp_result_decim(dsp_result_decim),
 		.dsp_trig_cfg(),
 		.dsp_trig_threshold(),
 		.dsp_raw_tap(),
 		.dsp_raw_enable(),
-		.dsp_fir_reload(),
+		.dsp_fir_reload(dsp_fir_reload),
 		.dsp_sw_trigger(),
 		.dsp_fault_clear(),
-		.dsp_gain_ch(3'd0),
-		.dsp_gain(),
-		.dsp_offset(),
-		.dsp_trim_ch(3'd0),
-		.dsp_trim(),
-		.dsp_fir_addr(6'd0),
-		.dsp_fir_coef(),
-		.dsp_result_new(1'b0),
-		.dsp_result(32'd0),
-		.dsp_wim_new(1'b0),
-		.dsp_wim_sum(64'd0),
-		.dsp_wim_count(32'd0),
-		.dsp_stable(1'b0),
-		.dsp_overload(1'b0),
-		.dsp_reload_busy(1'b0),
+		.dsp_gain_ch(dsp_gain_ch),
+		.dsp_gain(dsp_gain),
+		.dsp_offset(dsp_offset),
+		.dsp_trim_ch(dsp_trim_ch),
+		.dsp_trim(dsp_trim),
+		.dsp_fir_addr(dsp_fir_addr),
+		.dsp_fir_coef(dsp_fir_coef),
+		.dsp_result_new(dsp_result_new),
+		.dsp_result(dsp_result),
+		.dsp_wim_new(dsp_wim_new),
+		.dsp_wim_sum(dsp_wim_sum),
+		.dsp_wim_count(dsp_wim_count),
+		.dsp_stable(dsp_stable),
+		.dsp_overload(dsp_overload),
+		.dsp_reload_busy(dsp_reload_busy),
 		.dsp_capture_active(1'b0),
 		.dsp_faults(40'd0)
 	);
@@ -326,12 +354,12 @@ module mclp_top (
 		.s_axis_tid(1'b0),
 		.s_axis_tdest(1'b0),
 		.s_axis_tuser(1'b0),
-		.m_axis_tvalid(),
-		.m_axis_tready(1'b1),             // no consumer: samples are dropped
-		.m_axis_tdata(),
+		.m_axis_tvalid(smp_tvalid),
+		.m_axis_tready(smp_tready),
+		.m_axis_tdata(smp_tdata),
 		.m_axis_tstrb(),
 		.m_axis_tkeep(),
-		.m_axis_tlast(),
+		.m_axis_tlast(smp_tlast),
 		.m_axis_tid(),
 		.m_axis_tdest(),
 		.m_axis_tuser(),
@@ -345,6 +373,40 @@ module mclp_top (
 		.injectdbiterr_axis(1'b0),
 		.sbiterr_axis(),
 		.dbiterr_axis()
+	);
+
+/////////////////////////////////////////////////////////////////////////////
+//Processing (clk_dsp)
+/////////////////////////////////////////////////////////////////////////////
+	mclp_dsp mclp_dsp_0 (
+		.clk(clk_dsp),
+		.rst(rst_dsp),
+		.stab_band(dsp_stab_band),
+		.stab_count(dsp_stab_count),
+		.wim_enter(dsp_wim_enter),
+		.wim_exit(dsp_wim_exit),
+		.wim_settle(dsp_wim_settle),
+		.result_decim(dsp_result_decim),
+		.fir_reload(dsp_fir_reload),
+		.gain_ch(dsp_gain_ch),
+		.gain(dsp_gain),
+		.offset(dsp_offset),
+		.trim_ch(dsp_trim_ch),
+		.trim(dsp_trim),
+		.fir_addr(dsp_fir_addr),
+		.fir_coef(dsp_fir_coef),
+		.s_valid(smp_tvalid),
+		.s_ready(smp_tready),
+		.s_data(smp_tdata),
+		.s_last(smp_tlast),
+		.result(dsp_result),
+		.result_new(dsp_result_new),
+		.wim_sum(dsp_wim_sum),
+		.wim_count(dsp_wim_count),
+		.wim_new(dsp_wim_new),
+		.stable(dsp_stable),
+		.overload(dsp_overload),
+		.reload_busy(dsp_reload_busy)
 	);
 
 endmodule
