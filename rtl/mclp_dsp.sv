@@ -3,7 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // mclp_dsp
 // Processing subsystem, clk domain clk_dsp: CIC, gain/offset, corner trim, channel sum, FIR with
-// coefficient reload, weight, result decimation, stability and WIM.
+// coefficient reload, weight, result decimation, stability, WIM, sticky faults and raw capture.
 // Every input is already in clk_dsp (mclp_registers does the crossings); configuration is quasi-static.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_dsp (
@@ -18,7 +18,13 @@ module mclp_dsp (
 	input  wire [31:0]        wim_exit,
 	input  wire [31:0]        wim_settle,
 	input  wire [31:0]        result_decim,
+	input  wire [31:0]        trig_cfg,
+	input  wire [31:0]        trig_threshold,
+	input  wire [1:0]         raw_tap,
+	input  wire               raw_enable,
 	input  wire               fir_reload,
+	input  wire               sw_trigger,
+	input  wire               fault_clear,
 
 	// Coefficient RAM read ports (mclp_registers, read latency 1)
 	output wire [2:0]         gain_ch,
@@ -43,15 +49,46 @@ module mclp_dsp (
 	output wire               wim_new,
 	output wire               stable,
 	output reg                overload = 0,
-	output wire               reload_busy
+	output wire               reload_busy,
+	output wire               capture_active,
+	output reg  [39:0]        faults = 0,          // 5 sticky bits per channel
+
+	// Raw records to CDC FIFO 2
+	output wire               m_valid,
+	output wire [63:0]        m_data,
+	output wire               m_last,
+	input  wire               raw_full
 );
 
 	localparam signed [39:0] W_MAX = 40'sd2147483647;
 	localparam signed [39:0] W_MIN = -40'sd2147483648;
 
+	/////////////////////////////////////////////////////////////////////////////
+	// AFE beats: frame timestamp and fault bits for the raw header, sticky faults
+	/////////////////////////////////////////////////////////////////////////////
 	wire        cic_ready;
+	wire        afe_beat = s_valid && cic_ready;
+	wire [2:0]  afe_ch   = s_data[26:24];
+	wire [4:0]  afe_flag = s_data[31:27];
+	reg  [47:0] frame_ts     = 48'd0;
+	reg  [7:0]  frame_faults = 8'd0;
+	reg  [7:0]  beat_faults  = 8'd0;
 
 	assign s_ready = cic_ready;
+
+	always @(posedge clk) begin
+		if (rst || fault_clear)
+			faults <= 40'd0;
+		else if (afe_beat)
+			faults[afe_ch*5 +: 5] <= faults[afe_ch*5 +: 5] | afe_flag;
+		if (afe_beat) begin
+			beat_faults[afe_ch] <= |afe_flag;
+			if (afe_ch == 3'd0)
+				frame_ts <= s_data[79:32];
+			if (s_last)
+				frame_faults <= {|afe_flag, beat_faults[6:0]};
+		end
+	end
 
 	/////////////////////////////////////////////////////////////////////////////
 	// CIC: 8 channels, R = 8, N = 3, 24 -> 32 bits. The channel is counted between tlasts.
@@ -237,6 +274,48 @@ module mclp_dsp (
 				overload <= sum_overload;
 		end
 	end
+
+	/////////////////////////////////////////////////////////////////////////////
+	// Raw capture: tap select, record formatter and trigger
+	/////////////////////////////////////////////////////////////////////////////
+	reg         tap_valid;
+	reg  [2:0]  tap_ch;
+	reg  [31:0] tap_data;
+	// header: tap 0 stamps its own frame; later taps take the newest frame. Fault bits are the last
+	// complete frame's.
+	wire [47:0] rec_ts = (raw_tap == 2'd0) ? s_data[79:32] : frame_ts;
+
+	always @(*) begin
+		case (raw_tap)
+			2'd0:    {tap_valid, tap_ch, tap_data} = {afe_beat, afe_ch, {{8{s_data[23]}}, s_data[23:0]}};
+			2'd1:    {tap_valid, tap_ch, tap_data} = {cic_valid, cic_ch, cic_data};
+			2'd2:    {tap_valid, tap_ch, tap_data} = {go_valid, go_ch, go_data};
+			default: {tap_valid, tap_ch, tap_data} = {tr_valid, tr_ch, tr_data};
+		endcase
+	end
+
+	raw_capture raw_capture_0 (
+		.clk(clk),
+		.rst(rst),
+		.enable(raw_enable),
+		.mode(trig_cfg[1:0]),
+		.frames(trig_cfg[31:16]),
+		.sw_trigger(sw_trigger),
+		.threshold(trig_threshold),
+		.tap(raw_tap),
+		.sum_valid(sum_valid),
+		.sum(sum_data),
+		.s_valid(tap_valid),
+		.s_ch(tap_ch),
+		.s_data(tap_data),
+		.ts(rec_ts),
+		.faults(frame_faults),
+		.full(raw_full),
+		.m_valid(m_valid),
+		.m_data(m_data),
+		.m_last(m_last),
+		.active(capture_active)
+	);
 
 endmodule
 

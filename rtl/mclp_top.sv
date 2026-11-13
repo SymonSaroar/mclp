@@ -5,7 +5,7 @@
 // MCLP top level: instances and wiring only.
 // Clock domains: clk_axi (FCLK0, 100 MHz) for the PS, register file and DMA; clk_spi (20 MHz) for the
 // AD7190 front end; clk_dsp (50 MHz) for processing. Control and status cross in mclp_registers, the
-// sample stream through the XPM FIFO here. S_AXIS_RAW is idle.
+// sample and record streams through the two XPM FIFOs here.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_top (
 	// PS DDR and fixed IO
@@ -62,6 +62,10 @@ module mclp_top (
 	wire [1:0]    m_axi_regs_rresp;
 	wire          m_axi_regs_rvalid;
 	wire          m_axi_regs_rready;
+	wire [63:0]   s_axis_raw_tdata;
+	wire          s_axis_raw_tlast;
+	wire          s_axis_raw_tvalid;
+	wire          s_axis_raw_tready;
 
 	// Clocks and resets
 	wire          clk_spi;
@@ -93,7 +97,13 @@ module mclp_top (
 	wire [31:0]   dsp_wim_exit;
 	wire [31:0]   dsp_wim_settle;
 	wire [31:0]   dsp_result_decim;
+	wire [31:0]   dsp_trig_cfg;
+	wire [31:0]   dsp_trig_threshold;
+	wire [1:0]    dsp_raw_tap;
+	wire          dsp_raw_enable;
 	wire          dsp_fir_reload;
+	wire          dsp_sw_trigger;
+	wire          dsp_fault_clear;
 	wire [2:0]    dsp_gain_ch;
 	wire [31:0]   dsp_gain;
 	wire [31:0]   dsp_offset;
@@ -109,8 +119,10 @@ module mclp_top (
 	wire          dsp_stable;
 	wire          dsp_overload;
 	wire          dsp_reload_busy;
+	wire          dsp_capture_active;
+	wire [39:0]   dsp_faults;
 
-	// Sample stream (clk_spi -> clk_dsp)
+	// Sample stream (clk_spi -> clk_dsp) and record stream (clk_dsp -> clk_axi)
 	wire          fe_tvalid;
 	wire          fe_tready;
 	wire [79:0]   fe_tdata;
@@ -119,6 +131,10 @@ module mclp_top (
 	wire          smp_tready;
 	wire [79:0]   smp_tdata;
 	wire          smp_tlast;
+	wire          rec_tvalid;
+	wire [63:0]   rec_tdata;
+	wire          rec_tlast;
+	wire          rec_prog_full;
 
 /////////////////////////////////////////////////////////////////////////////
 //PS block design
@@ -172,12 +188,12 @@ module mclp_top (
 		.M_AXI_REGS_rvalid(m_axi_regs_rvalid),
 		.M_AXI_REGS_rready(m_axi_regs_rready),
 
-		// Raw records: idle
-		.S_AXIS_RAW_tdata(64'd0),
+		// Raw records -> AXI DMA S2MM
+		.S_AXIS_RAW_tdata(s_axis_raw_tdata),
 		.S_AXIS_RAW_tkeep(8'hFF),
-		.S_AXIS_RAW_tlast(1'b0),
-		.S_AXIS_RAW_tvalid(1'b0),
-		.S_AXIS_RAW_tready()
+		.S_AXIS_RAW_tlast(s_axis_raw_tlast),
+		.S_AXIS_RAW_tvalid(s_axis_raw_tvalid),
+		.S_AXIS_RAW_tready(s_axis_raw_tready)
 	);
 
 /////////////////////////////////////////////////////////////////////////////
@@ -279,13 +295,13 @@ module mclp_top (
 		.dsp_wim_exit(dsp_wim_exit),
 		.dsp_wim_settle(dsp_wim_settle),
 		.dsp_result_decim(dsp_result_decim),
-		.dsp_trig_cfg(),
-		.dsp_trig_threshold(),
-		.dsp_raw_tap(),
-		.dsp_raw_enable(),
+		.dsp_trig_cfg(dsp_trig_cfg),
+		.dsp_trig_threshold(dsp_trig_threshold),
+		.dsp_raw_tap(dsp_raw_tap),
+		.dsp_raw_enable(dsp_raw_enable),
 		.dsp_fir_reload(dsp_fir_reload),
-		.dsp_sw_trigger(),
-		.dsp_fault_clear(),
+		.dsp_sw_trigger(dsp_sw_trigger),
+		.dsp_fault_clear(dsp_fault_clear),
 		.dsp_gain_ch(dsp_gain_ch),
 		.dsp_gain(dsp_gain),
 		.dsp_offset(dsp_offset),
@@ -301,8 +317,8 @@ module mclp_top (
 		.dsp_stable(dsp_stable),
 		.dsp_overload(dsp_overload),
 		.dsp_reload_busy(dsp_reload_busy),
-		.dsp_capture_active(1'b0),
-		.dsp_faults(40'd0)
+		.dsp_capture_active(dsp_capture_active),
+		.dsp_faults(dsp_faults)
 	);
 
 /////////////////////////////////////////////////////////////////////////////
@@ -387,7 +403,13 @@ module mclp_top (
 		.wim_exit(dsp_wim_exit),
 		.wim_settle(dsp_wim_settle),
 		.result_decim(dsp_result_decim),
+		.trig_cfg(dsp_trig_cfg),
+		.trig_threshold(dsp_trig_threshold),
+		.raw_tap(dsp_raw_tap),
+		.raw_enable(dsp_raw_enable),
 		.fir_reload(dsp_fir_reload),
+		.sw_trigger(dsp_sw_trigger),
+		.fault_clear(dsp_fault_clear),
 		.gain_ch(dsp_gain_ch),
 		.gain(dsp_gain),
 		.offset(dsp_offset),
@@ -406,7 +428,58 @@ module mclp_top (
 		.wim_new(dsp_wim_new),
 		.stable(dsp_stable),
 		.overload(dsp_overload),
-		.reload_busy(dsp_reload_busy)
+		.reload_busy(dsp_reload_busy),
+		.capture_active(dsp_capture_active),
+		.faults(dsp_faults),
+		.m_valid(rec_tvalid),
+		.m_data(rec_tdata),
+		.m_last(rec_tlast),
+		.raw_full(rec_prog_full)
+	);
+
+	// CDC FIFO 2: raw records clk_dsp -> clk_axi, into the AXI DMA. Records start only below the
+	// programmable-full threshold, and a 5-word record always fits above it.
+	xpm_fifo_axis #(
+		.CDC_SYNC_STAGES(2),
+		.CLOCKING_MODE("independent_clock"),
+		.FIFO_DEPTH(512),
+		.FIFO_MEMORY_TYPE("auto"),
+		.PACKET_FIFO("false"),
+		.PROG_FULL_THRESH(490),
+		.TDATA_WIDTH(64),
+		.USE_ADV_FEATURES("1002")       // prog_full_axis
+	) xpm_fifo_records_inst (
+		.s_aresetn(rstn_dsp),
+		.s_aclk(clk_dsp),
+		.m_aclk(clk_axi),
+		.s_axis_tvalid(rec_tvalid),
+		.s_axis_tready(),
+		.s_axis_tdata(rec_tdata),
+		.s_axis_tstrb({8{1'b1}}),
+		.s_axis_tkeep({8{1'b1}}),
+		.s_axis_tlast(rec_tlast),
+		.s_axis_tid(1'b0),
+		.s_axis_tdest(1'b0),
+		.s_axis_tuser(1'b0),
+		.m_axis_tvalid(s_axis_raw_tvalid),
+		.m_axis_tready(s_axis_raw_tready),
+		.m_axis_tdata(s_axis_raw_tdata),
+		.m_axis_tstrb(),
+		.m_axis_tkeep(),
+		.m_axis_tlast(s_axis_raw_tlast),
+		.m_axis_tid(),
+		.m_axis_tdest(),
+		.m_axis_tuser(),
+		.prog_full_axis(rec_prog_full),
+		.wr_data_count_axis(),
+		.almost_full_axis(),
+		.prog_empty_axis(),
+		.rd_data_count_axis(),
+		.almost_empty_axis(),
+		.injectsbiterr_axis(1'b0),
+		.injectdbiterr_axis(1'b0),
+		.sbiterr_axis(),
+		.dbiterr_axis()
 	);
 
 endmodule
