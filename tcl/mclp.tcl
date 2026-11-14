@@ -72,6 +72,11 @@ if {[llength $tb]}  { add_files -norecurse -fileset sim_1 $tb }
 puts "Added [llength $rtl] rtl, [llength $xdc] xdc, [llength $mem] mem, [llength $tb] tb files"
 
 source $origin_dir/tcl/ip.tcl
+# tb/system/clk_wiz_0_stub.sv stands in for the MMCM in simulation: the core's model toggles a 1 GHz VCO,
+# too slow for the system test
+foreach ip {clk_wiz_0} {
+	set_property used_in_simulation false [get_files -norecurse $ip.xci]
+}
 
 # ==============================================================================
 # BLOCK DESIGNS  (tcl/*_bd.tcl, written by: write_bd_tcl -force tcl/<name>_bd.tcl)
@@ -84,11 +89,19 @@ foreach bd_script [lsort [src {tcl/*_bd.tcl}]] {
 	if {$bd eq ""} { error "[file tail $bd_script] did not create a block design" }
 	set bd_file [get_files -norecurse [get_property NAME $bd].bd]
 	close_bd_design $bd
-	add_files -norecurse -fileset sources_1 [make_wrapper -files $bd_file -top]
+	set wrapper [make_wrapper -files $bd_file -top]
+	add_files -norecurse -fileset sources_1 $wrapper
+	# tb/system/zynq_ps_wrapper_stub.sv stands in for the block design in simulation
+	set_property used_in_simulation false $bd_file
+	set_property used_in_simulation false [get_files -norecurse $wrapper]
 }
 
 set_property top $top_module [get_filesets sources_1]
 update_compile_order -fileset sources_1
+if {[llength $tb]} {
+	set_property top mclp_top_tb [get_filesets sim_1]
+	set_property -name xsim.simulate.runtime -value 600ms -objects [get_filesets sim_1]
+}
 
 puts ""
 puts "SUCCESS: [get_property DIRECTORY [current_project]]/$proj_name.xpr"
