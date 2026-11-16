@@ -1,0 +1,32 @@
+/*
+ * mclp: user-space access through UIO (sw/linux/mclp).
+ * The register block sits behind an external port of the block design, so the system device tree has
+ * no node for it. The AXI DMA is handed to UIO as well, with the reserved capture ring as its second map.
+ * The driver binds with: modprobe uio_pdrv_genirq of_id=generic-uio (done by /etc/init.d/mclp).
+ */
+/ {
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		mclp_ring: mclp-ring@3fc00000 {
+			reg = <0x3fc00000 0x400000>;       /* top 4 MB of the 1 GB DDR */
+			no-map;
+		};
+	};
+};
+
+&amba_pl {
+	mclp: mclp@43c00000 {
+		compatible = "generic-uio";
+		reg = <0x43c00000 0x10000>;
+		interrupt-parent = <&intc>;
+		interrupts = <0 30 4>;              /* IRQ_F2P[1] = mclp_irq: GIC ID 62, level high */
+	};
+};
+
+&axi_dma {
+	compatible = "generic-uio";
+	reg = <0x40400000 0x10000>, <0x3fc00000 0x400000>;   /* map 0: S2MM registers, map 1: capture ring */
+};

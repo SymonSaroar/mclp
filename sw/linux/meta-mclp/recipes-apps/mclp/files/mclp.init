@@ -1,0 +1,28 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          mclp
+# Required-Start:    $local_fs
+# Default-Start:     2 3 4 5
+# Short-Description: UIO access to the MCLP PL, calibration and ADC start-up
+### END INIT INFO
+
+case "$1" in
+start)
+	# generic-uio nodes (mclp.dtsi): the register block and the AXI DMA with the capture ring.
+	# /etc/modprobe.d/mclp-uio.conf sets of_id; a module loaded earlier without it is reloaded.
+	modprobe uio_pdrv_genirq
+	if [ ! -e /sys/class/uio/uio0 ]; then
+		modprobe -r uio_pdrv_genirq
+		modprobe uio_pdrv_genirq of_id=generic-uio
+	fi
+	# check the PL, load /etc/mclp/mclp.cal (or defaults), apply it, run the AD7190 init list
+	mclp init
+	;;
+stop)
+	;;
+*)
+	echo "usage: $0 start"
+	exit 1
+	;;
+esac
+exit 0
