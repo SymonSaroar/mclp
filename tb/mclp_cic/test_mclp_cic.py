@@ -29,7 +29,8 @@ H = conv(conv([1] * R, [1] * R), [1] * R)
 
 
 def reference(x):
-    return [sum(H[k] * x[n - k] for k in range(len(H)) if n >= k) >> 1 for n in range(R - 1, len(x), R)]
+    # outputs at n = 0, R, 2R, ...: AMD's CIC Compiler decimation phase (the first frame gives H[0] x[0])
+    return [sum(H[k] * x[n - k] for k in range(len(H)) if n >= k) >> 1 for n in range(0, len(x), R)]
 
 
 @cocotb.test()

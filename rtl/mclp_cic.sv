@@ -10,9 +10,10 @@
 // fits in W bits, which R^N times the input always does. The output is the top OW bits of the last comb
 // (truncation), gain R^N / 2^(W - OW). Same results as AMD's CIC Compiler v4.0 with decimation, M = 1,
 // truncation, which also keeps full-width stages and quantizes only the output.
-// One input beat per clock, channels 0..CH-1 in order with s_axis_data_tlast on the last. On every R-th
-// frame a channel's output follows its input beat by two clocks (integrators, then combs), with the
-// channel in m_axis_data_tuser.
+// One input beat per clock, channels 0..CH-1 in order with s_axis_data_tlast on the last. Outputs come on
+// frames 0, R, 2R, ... after reset, the decimation phase of AMD's core: the first frame already gives an
+// output, H[0] x[0]. A channel's output follows its input beat by two clocks (integrators, then combs),
+// with the channel in m_axis_data_tuser.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_cic #(
 	parameter integer CH = 8,
@@ -72,7 +73,7 @@ module mclp_cic #(
 				a[n+1] = integ[n*CH + ch] + a[n];
 				integ[n*CH + ch] <= a[n+1];
 			end
-			c_go <= (frame == R - 1);
+			c_go <= (frame == 0);
 			c_ch <= ch;
 			c_in <= a[N];
 			event_tlast_unexpected <= s_axis_data_tlast && (ch != CH - 1);
