@@ -1,6 +1,6 @@
 """rtl/mclp_cic.sv against a direct-form reference: impulse response of three 8-sample boxcars (22 taps,
 DC gain 512), decimated by 8, LSB truncated. Random data on six channels, full scale of both signs on two,
-random gaps between frames.
+random gaps between frames, input paced by tready.
 
     python tb/mclp_cic/test_mclp_cic.py
 """
@@ -60,10 +60,13 @@ async def random_frames(dut):
             dut.s_axis_data_tvalid.value = 1
             dut.s_axis_data_tdata.value = x[ch][f] & 0xFF_FFFF
             dut.s_axis_data_tlast.value = ch == CH - 1
-            await RisingEdge(dut.aclk)
+            while True:                             # hold the beat until tready
+                await RisingEdge(dut.aclk)
+                if int(dut.s_axis_data_tready.value):
+                    break
         dut.s_axis_data_tvalid.value = 0
         await ClockCycles(dut.aclk, rnd.randint(0, 3))
-    await ClockCycles(dut.aclk, 5)
+    await ClockCycles(dut.aclk, 10)
     for ch in range(CH):
         assert got[ch] == reference(x[ch]), f"channel {ch}"
     assert got[0][-1] == 256 * (2**23 - 1) and got[1][-1] == -2**31
