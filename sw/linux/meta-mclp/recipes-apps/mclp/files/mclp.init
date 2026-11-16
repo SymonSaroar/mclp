@@ -19,12 +19,15 @@ start)
 		modprobe -r uio_pdrv_genirq
 		modprobe uio_pdrv_genirq of_id=generic-uio
 	fi
-	# check the PL, load /etc/mclp/mclp.cal (or defaults), apply it, run the AD7190 init list
-	mclp init || exit 1
-	# mclpd, first start: a self-signed HTTPS certificate (P-256, 10 years); replace it with your own
+	# check the PL, load /etc/mclp/mclp.cal (or defaults), apply it, run the AD7190 init list.
+	# mclpd starts even if this fails, so the fault can be read over the network; on a wrong
+	# bitstream mclpd stops by itself (ID check, logged in /var/log/mclpd.log).
+	mclp init || echo "mclp: start-up reported a failure; check mclp status and mclp faults"
+	# mclpd, first start: a self-signed HTTPS certificate (P-256); replace it with your own. 100 years,
+	# counted from the clock at first boot, which may be unset (1970): a shorter validity would already be expired.
 	if [ ! -s /etc/mclp/server.key ] || [ ! -s /etc/mclp/server.crt ]; then
 		mkdir -p /etc/mclp
-		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 36500 \
 			-subj "/CN=$(hostname)" -keyout /etc/mclp/server.key -out /etc/mclp/server.crt 2>>$LOG
 		chmod 600 /etc/mclp/server.key
 	fi
