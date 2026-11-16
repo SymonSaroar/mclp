@@ -54,8 +54,8 @@
       </BRAM>
     </MemoryLayout>
   </MemoryArray>
-  <MemoryArray InstPath="weigh_registers_0/xpm_memory_trim_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
-    <MemoryLayout Name="weigh_registers_0/xpm_memory_trim_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
+  <MemoryArray InstPath="mclp_registers_0/xpm_memory_trim_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
+    <MemoryLayout Name="mclp_registers_0/xpm_memory_trim_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
       <BRAM MemType="RAMB36" Placement="X2Y1" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
@@ -67,8 +67,8 @@
       </BRAM>
     </MemoryLayout>
   </MemoryArray>
-  <MemoryArray InstPath="weigh_registers_0/xpm_memory_seq_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
-    <MemoryLayout Name="weigh_registers_0/xpm_memory_seq_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
+  <MemoryArray InstPath="mclp_registers_0/xpm_memory_seq_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
+    <MemoryLayout Name="mclp_registers_0/xpm_memory_seq_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
       <BRAM MemType="RAMB36" Placement="X1Y0" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
@@ -80,8 +80,8 @@
       </BRAM>
     </MemoryLayout>
   </MemoryArray>
-  <MemoryArray InstPath="weigh_registers_0/xpm_memory_offset_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
-    <MemoryLayout Name="weigh_registers_0/xpm_memory_offset_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
+  <MemoryArray InstPath="mclp_registers_0/xpm_memory_offset_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
+    <MemoryLayout Name="mclp_registers_0/xpm_memory_offset_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
       <BRAM MemType="RAMB36" Placement="X1Y1" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
@@ -93,8 +93,8 @@
       </BRAM>
     </MemoryLayout>
   </MemoryArray>
-  <MemoryArray InstPath="weigh_registers_0/xpm_memory_gain_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
-    <MemoryLayout Name="weigh_registers_0/xpm_memory_gain_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
+  <MemoryArray InstPath="mclp_registers_0/xpm_memory_gain_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
+    <MemoryLayout Name="mclp_registers_0/xpm_memory_gain_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
       <BRAM MemType="RAMB36" Placement="X1Y2" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
@@ -106,8 +106,8 @@
       </BRAM>
     </MemoryLayout>
   </MemoryArray>
-  <MemoryArray InstPath="weigh_registers_0/xpm_memory_fir_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
-    <MemoryLayout Name="weigh_registers_0/xpm_memory_fir_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
+  <MemoryArray InstPath="mclp_registers_0/xpm_memory_fir_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
+    <MemoryLayout Name="mclp_registers_0/xpm_memory_fir_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
       <BRAM MemType="RAMB36" Placement="X2Y2" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
