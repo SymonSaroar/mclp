@@ -33,10 +33,11 @@ Key files in `images/linux/` after a build:
 |---|---|
 | `BOOT.BIN` | First-stage boot loader, bitstream and U-Boot, for the SD card or QSPI (`petalinux-package boot`) |
 | `boot.scr` | U-Boot script that loads the kernel, device tree and root file system |
-| `image.ub` | FIT image: kernel, device tree and root file system in one file, for SD boot |
+| `image.ub` | FIT image with the kernel and device tree |
 | `zImage`, `uImage` | Linux kernel (`zImage` for JTAG) |
 | `system.dtb` | Linux device tree, with `mclp.dtsi` merged in |
-| `rootfs.cpio.gz.u-boot` | Root file system as an initial RAM disk |
+| `rootfs.ext4` | Root file system, the SD card's second partition |
+| `rootfs.cpio.gz.u-boot` | Root file system as an initial RAM disk, for INITRD builds |
 | `system.bit` | The PL bitstream |
 | `zynq_fsbl.elf`, `u-boot.elf` | Boot loaders for JTAG boot |
 | `petalinux-sdimage.wic` | SD card image (`petalinux-package wic`), written to the card in one step |
@@ -163,8 +164,9 @@ with status 1 if the command reports a failure; settings the command changes are
 
 `/dev/uio*` belongs to root, so the `petalinux` user runs `sudo mclp ...`. At boot, `/etc/init.d/mclp`
 runs `mclp init`: it checks the ID register, loads and applies the calibration, and runs the AD7190
-power-up list. With the INITRD root file system `/etc` is in RAM; to keep the calibration across reboots,
-select EXT4 (SD) in `petalinux-config` -> Image Packaging Configuration.
+power-up list. The root file system is EXT4 on the SD card's second partition (`/dev/mmcblk0p2`), so the
+calibration survives a reboot. With INITRD instead (`petalinux-config` -> Image Packaging Configuration),
+`/etc` is in RAM and the calibration is lost at power-off.
 
 `-t` prints every register access as it happens, decoded, with the `devmem` command that does the same, and
 a heading for each step of a command:
