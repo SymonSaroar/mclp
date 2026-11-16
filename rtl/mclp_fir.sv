@@ -6,7 +6,7 @@
 // for any data and coefficients. Same results as AMD's FIR Compiler v7.2 with integer coefficients and
 // full-precision output (checked against its bit-accurate C model).
 // One multiply-accumulate per clock: an input sample starts a pass over the TAPS products, and the output
-// follows TAPS + 3 clocks later. s_axis_data_tready is low during the pass; at the design's 600 Hz sample
+// follows TAPS + 4 clocks later. s_axis_data_tready is low during the pass; at the design's 600 Hz sample
 // rate and 50 MHz clock a pass takes 0.1 % of the sample period.
 // Coefficients are double-buffered. Reload beats (s_axis_reload, coefficient order h[0]..h[TAPS-1], tlast
 // on the last) fill the inactive bank; the next CONFIG beat makes it active, and only a complete reload
@@ -63,10 +63,11 @@ module mclp_fir #(
 	reg  [AB-1:0]          k      = 0;              // tap being read
 	reg  [AB-1:0]          xi     = 0;              // its sample, wp - k modulo TAPS
 
-	// pipeline: read, multiply, accumulate
-	reg  [31:0]            c_rd = 0;
-	reg  [DW-1:0]          x_rd = 0;
+	// pipeline: read, RAM output register, multiply, accumulate
+	reg  [31:0]            c_rd = 0, c_q = 0;
+	reg  [DW-1:0]          x_rd = 0, x_q = 0;
 	reg                    v_rd = 1'b0, first_rd = 1'b0, last_rd = 1'b0;
+	reg                    v_q = 1'b0, first_q = 1'b0, last_q = 1'b0;
 	reg  signed [DW+CW-1:0] prod = 0;
 	reg                    v_p = 1'b0, first_p = 1'b0, last_p = 1'b0;
 	reg  signed [OW-1:0]   acc = 0;
@@ -94,6 +95,7 @@ module mclp_fir #(
 		if (take_rld)
 			coef[(bank ? 0 : TAPS) + r_idx] <= {{(32 - CW){s_axis_reload_tdata[CW-1]}}, s_axis_reload_tdata[CW-1:0]};
 		c_rd <= coef[(bank ? TAPS : 0) + k];
+		c_q  <= c_rd;                               // block RAM output register
 	end
 
 	// sample history
@@ -101,6 +103,7 @@ module mclp_fir #(
 		if (take_data)
 			hist[(wp == TAPS - 1) ? 0 : wp + 1] <= s_axis_data_tdata[DW-1:0];
 		x_rd <= hist[xi];
+		x_q  <= x_rd;
 	end
 
 	always @(posedge aclk) begin
@@ -146,10 +149,14 @@ module mclp_fir #(
 		first_rd <= (k == 0);
 		last_rd  <= (k == TAPS - 1);
 
-		prod    <= $signed(x_rd) * $signed(c_rd[CW-1:0]);
-		v_p     <= aresetn && v_rd;
-		first_p <= first_rd;
-		last_p  <= last_rd;
+		v_q     <= aresetn && v_rd;
+		first_q <= first_rd;
+		last_q  <= last_rd;
+
+		prod    <= $signed(x_q) * $signed(c_q[CW-1:0]);
+		v_p     <= aresetn && v_q;
+		first_p <= first_q;
+		last_p  <= last_q;
 
 		if (v_p) begin
 			acc <= sum;
