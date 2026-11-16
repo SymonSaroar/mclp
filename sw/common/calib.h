@@ -10,7 +10,7 @@
 #define CAL_CH       8
 #define CAL_TAPS     64
 #define CAL_MAGIC    0x4C414357u   /* "WCAL" */
-#define CAL_VERSION  1u
+#define CAL_VERSION  2u            /* layout of cal_t; a record of another version is not loaded */
 #define GAIN_DEFAULT 0.125         /* RESULT headroom: full scale on all 8 channels fits 32 bits */
 
 typedef struct {
@@ -26,7 +26,8 @@ typedef struct {
 	uint32_t wim_settle;
 	uint32_t decim;                /* RESULT rate = 600 Hz / decim */
 	double   fir_fc;               /* FIR low-pass cutoff, Hz */
-	uint32_t sum;                  /* checksum of everything above */
+	double   tare;                 /* RESULT counts above zero, subtracted from the reading */
+	uint32_t sum;                 /* checksum of everything above */
 } cal_t;
 
 uint32_t q30(double k);                       /* saturates to [-2, 2) */

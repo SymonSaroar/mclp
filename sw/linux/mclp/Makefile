@@ -1,17 +1,24 @@
-# mclp for Linux (the PetaLinux recipe runs this with the cross compiler in CC/CFLAGS/LDFLAGS)
+# mclp (console) and mclpd (REST/MQTT service) for Linux. The PetaLinux recipe runs this with the cross
+# compiler in CC/CFLAGS/LDFLAGS; mclpd needs libmicrohttpd, libmosquitto, cJSON and libcrypt.
 COMMON ?= ../../common
 CFLAGS ?= -O2
 CFLAGS += -std=gnu11 -Wall -Wextra -I$(COMMON)
-SRC = main.c $(COMMON)/console.c $(COMMON)/mclp_ops.c $(COMMON)/calib.c
+SHARED = backend.c $(COMMON)/console.c $(COMMON)/mclp_ops.c $(COMMON)/calib.c
+DEPS = $(SHARED) backend.h $(wildcard $(COMMON)/*.h)
 
-mclp: $(SRC) $(wildcard $(COMMON)/*.h)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) -lm
+all: mclp mclpd
 
-install: mclp
+mclp: main.c $(DEPS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ main.c $(SHARED) -lm -pthread
+
+mclpd: mclpd.c $(DEPS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ mclpd.c $(SHARED) -lmicrohttpd -lmosquitto -lcjson -lcrypt -lm -pthread
+
+install: all
 	install -d $(DESTDIR)/usr/bin
-	install -m 0755 mclp $(DESTDIR)/usr/bin/mclp
+	install -m 0755 mclp mclpd $(DESTDIR)/usr/bin/
 
 clean:
-	rm -f mclp
+	rm -f mclp mclpd
 
-.PHONY: install clean
+.PHONY: all install clean

@@ -1,7 +1,8 @@
 # Linux: PetaLinux 2025.1
 
 Linux for MCLP on the ZC702: a PetaLinux 2025.1 project in the system device tree (SDT) flow,
-the `meta-mclp` layer that gives user space access to the PL, and `mclp`, the Linux console. The
+the `meta-mclp` layer that gives user space access to the PL, `mclp`, the Linux console, and `mclpd`,
+the REST and MQTT service. The
 sections below build the SD card image from this folder and boot it.
 
 ## What is in this folder
@@ -17,11 +18,14 @@ sections below build the SD card image from this folder and boot it.
 | `meta-mclp/conf/layer.conf` | Declares the layer; `MCLP_SW_DIR` points at the repository's `sw/` for the shared sources |
 | `meta-mclp/recipes-bsp/device-tree/files/mclp.dtsi` | Device-tree additions: UIO node for the register block, AXI DMA handed to UIO, 4 MB reserved for the capture ring |
 | `meta-mclp/recipes-bsp/device-tree/device-tree.bbappend` | Adds `mclp.dtsi` to the generated device tree |
-| `meta-mclp/recipes-apps/mclp/mclp.bb` | Builds `mclp` from `sw/common` and `mclp/`, installs it with the boot script and the module option |
-| `meta-mclp/recipes-apps/mclp/files/mclp.init` | Boot script (`/etc/init.d/mclp`): loads the UIO driver, runs `mclp init` |
+| `meta-mclp/recipes-apps/mclp/mclp.bb` | Builds `mclp` and `mclpd` from `sw/common` and `mclp/`, installs them with the boot script, the module option and the mclpd settings |
+| `meta-mclp/recipes-apps/mclp/files/mclp.init` | Boot script (`/etc/init.d/mclp`): loads the UIO driver, runs `mclp init`, creates the HTTPS certificate on the first start, starts `mclpd` |
+| `meta-mclp/recipes-apps/mclp/files/mclpd.conf` | `/etc/mclp/mclpd.conf`: HTTPS port, certificate, accounts file, MQTT broker and credentials |
 | `meta-mclp/recipes-apps/mclp/files/mclp-uio.conf` | `/etc/modprobe.d/mclp-uio.conf`: makes the UIO driver bind `generic-uio` nodes |
-| `mclp/main.c` | `mclp`: argument parsing and register access through UIO |
-| `mclp/Makefile` | Builds `mclp` with the compiler in `CC` (the recipe passes the cross compiler) |
+| `mclp/main.c` | `mclp`: argument parsing, keyboard input |
+| `mclp/mclpd.c` | `mclpd`: HTTPS server (libmicrohttpd), MQTT client (libmosquitto), accounts, JSON readings |
+| `mclp/backend.c` | Shared by both: register access through UIO, the calibration file, the lock on `/run/mclp.lock` |
+| `mclp/Makefile` | Builds both with the compiler in `CC` (the recipe passes the cross compiler) |
 | `images/linux/` | Build output, created by `petalinux-build`; not in git |
 
 The console logic itself (commands, register operations, calibration) is in `sw/common` and is shared with
@@ -176,6 +180,20 @@ a heading for each step of a command:
 [    67.016 ms] WR CTRL              <- 0x00000103  enable loopback FAULT_CLEAR tap=0  devmem 0x43C00004 32 0x00000103
 [    67.016 ms] WR LOOPBACK_CFG      <- 0x10460042  inject_ERR ch=4 period=4166        devmem 0x43C00054 32 0x10460042
 ```
+
+## mclpd
+
+```
+mclpd [-c /etc/mclp/mclpd.conf]
+```
+
+The REST and MQTT service (README step 5), started by `/etc/init.d/mclp` after `mclp init` and stopped by
+`/etc/init.d/mclp stop`. It links the same `sw/common` code as `mclp` and runs each command with its output
+captured into the JSON reply. `mclp` and `mclpd` take an exclusive lock on `/run/mclp.lock` for every
+command and every reading, and start each command from the stored settings, so neither works from settings
+the other has changed. Log: `/var/log/mclpd.log`.
+
+## UIO
 
 How the UIO access is set up: the kernel builds `uio_pdrv_genirq` as a module. It binds devices whose
 `compatible` matches its `of_id` parameter, and its device table has one empty entry, so the boot-time device

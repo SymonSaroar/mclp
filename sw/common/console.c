@@ -20,25 +20,28 @@
 #define NOISE_MAX (3.0 * 295.0)        /* nV rms: 3 x the datasheet figure at FS = 1, gain 128 */
 
 static cal_t  cal;
-static double tare;                    /* RESULT counts */
 static double baseline[N_CH];          /* tap 2 at no load, from cal zero */
 static int    have_baseline;
 static double pos_r[N_CH][N_CH];       /* tap 2 minus baseline, test weight at position i */
 static int    pos_have[N_CH];
 static unsigned adc_id[N_CH];
 static int    failed;                  /* a command reported a failure (exit status in one-shot mode) */
+static int    loaded;                  /* cal holds the stored record or the defaults */
+static int    oneshot;                 /* one command, then exit: store what it changed */
 
 /* ------------------------------------------------------------------ helpers */
 
 static int spanned(void) { return cal.kg_per_count != 0.0; }
 
+static double net_value(double raw)    /* RESULT to the user's unit: kg once spanned, counts before */
+{
+	double net = raw - cal.zero - cal.tare;
+	return spanned() ? net * cal.kg_per_count : net;
+}
+
 static void print_weight(double raw)
 {
-	double net = raw - cal.zero - tare;
-	if (spanned())
-		printf("%11.3f kg", net * cal.kg_per_count);
-	else
-		printf("%11.0f counts", net);
+	printf(spanned() ? "%11.3f kg" : "%11.0f counts", net_value(raw));
 }
 
 static double user_to_counts(double v)  /* kg once spanned, counts before */
@@ -94,6 +97,7 @@ static void cal_load_or_defaults(int verbose)
 {
 	cal_t tmp;
 	int e = hw->fetch(&tmp, sizeof tmp);
+	loaded = 1;
 	if (!e && cal_valid(&tmp)) {
 		cal = tmp;
 		if (verbose)
@@ -198,7 +202,7 @@ static void cmd_status(int argc, char **argv)
 	print_weight((int32_t)reg_rd(REG_RESULT));
 	printf("  %s%s, %d channel(s) with faults\n", st & ST_STABLE ? "stable" : "in motion",
 	       st & ST_OVERLOAD ? ", OVERLOAD" : "", faults_any());
-	printf("calibration: zero %.0f, tare %.0f, %s", cal.zero, tare, spanned() ? "" : "not spanned\n");
+	printf("calibration: zero %.0f, tare %.0f, %s", cal.zero, cal.tare, spanned() ? "" : "not spanned\n");
 	if (spanned())
 		printf("%.6g kg per count\n", cal.kg_per_count);
 	printf("filter: FIR %.2f Hz, result %.1f Hz (decim %u), stability %d counts over %u samples\n", cal.fir_fc,
@@ -265,7 +269,7 @@ static void cmd_tare(int argc, char **argv)
 {
 	double r;
 	if (argc > 1 && !strcmp(argv[1], "clear")) {
-		tare = 0.0;
+		cal.tare = 0.0;
 		printf("tare cleared\n");
 		return;
 	}
@@ -274,10 +278,10 @@ static void cmd_tare(int argc, char **argv)
 		failed = 1;
 		return;
 	}
-	tare = r - cal.zero;
-	printf("tare %.0f counts", tare);
+	cal.tare = r - cal.zero;
+	printf("tare %.0f counts", cal.tare);
 	if (spanned())
-		printf(" (%.3f kg)", tare * cal.kg_per_count);
+		printf(" (%.3f kg)", cal.tare * cal.kg_per_count);
 	printf("\n");
 }
 
@@ -291,7 +295,7 @@ static void cmd_zero(int argc, char **argv)
 		return;
 	}
 	cal.zero = r;
-	tare = 0.0;
+	cal.tare = 0.0;
 	wim_apply();
 	printf("zero set at %.0f counts\n", r);
 }
@@ -336,7 +340,7 @@ static void cal_zero(void)
 	have_baseline = 1;
 	memset(pos_have, 0, sizeof pos_have);
 	cal.zero = r;
-	tare = 0.0;
+	cal.tare = 0.0;
 	wim_apply();
 	cal_show();
 }
@@ -406,7 +410,7 @@ static void cal_solve(double kg)
 	}
 	cal.kg_per_count = kg / s;
 	cal.zero = z;
-	tare = 0.0;
+	cal.tare = 0.0;
 	wim_apply();
 	printf("trims from %d position(s):", m);
 	for (int ch = 0; ch < N_CH; ch++)
@@ -456,7 +460,7 @@ static void cmd_cal(int argc, char **argv)
 		cal_span(arg);
 	} else if (!strcmp(sub, "reset")) {
 		cal_defaults(&cal);
-		tare = 0.0;
+		cal.tare = 0.0;
 		have_baseline = 0;
 		memset(pos_have, 0, sizeof pos_have);
 		cal_apply();
@@ -475,7 +479,6 @@ static void cmd_cal(int argc, char **argv)
 			return;
 		}
 		cal = tmp;
-		tare = 0.0;
 		cal_apply();
 		printf("loaded %s\n", hw->store_name);
 	} else {
@@ -831,6 +834,67 @@ static int dispatch(int argc, char **argv)
 	return -1;
 }
 
+/* Shared hardware (hw->lock set, Linux): the console and mclpd each run a command under the lock, starting
+ * from the stored settings and storing what the command changed, so neither works from stale settings. */
+static void hw_lock(void)
+{
+	if (hw->lock)
+		hw->lock();
+	if (!loaded) {
+		cal_load_or_defaults(0);
+	} else if (hw->lock) {
+		cal_t tmp;
+		if (!hw->fetch(&tmp, sizeof tmp) && cal_valid(&tmp))
+			cal = tmp;
+	}
+}
+
+static void hw_unlock(void)
+{
+	if (hw->unlock)
+		hw->unlock();
+}
+
+static int run_cmd(int argc, char **argv)
+{
+	hw_lock();
+	uint32_t before = cal_checksum(&cal);
+	int rc = dispatch(argc, argv);
+	if ((hw->lock || oneshot) && cal_checksum(&cal) != before) {
+		cal.sum = cal_checksum(&cal);
+		if (hw->store(&cal, sizeof cal) == 0)
+			printf("(settings saved to %s)\n", hw->store_name);
+	}
+	hw_unlock();
+	return rc;
+}
+
+int console_exec(int argc, char **argv)
+{
+	failed = 0;
+	return run_cmd(argc, argv) ? 2 : failed;
+}
+
+void console_reading(reading_t *r)
+{
+	int t = trace;                     /* periodic reads stay out of the register trace */
+	trace = 0;
+	hw_lock();
+	uint32_t st = reg_rd(REG_STATUS);
+	r->seq      = reg_rd(REG_RESULT_SEQ);
+	r->spanned  = spanned();
+	r->value    = net_value((int32_t)reg_rd(REG_RESULT));
+	r->stable   = (st & ST_STABLE) != 0;
+	r->overload = (st & ST_OVERLOAD) != 0;
+	for (int ch = 0; ch < N_CH; ch++)
+		r->faults[ch] = reg_rd(REG_FAULT(ch));
+	r->wim_sum   = ((uint64_t)reg_rd(REG_WIM_SUM_HI) << 32) | reg_rd(REG_WIM_SUM_LO);
+	r->wim_n     = reg_rd(REG_WIM_COUNT);
+	r->wim_value = r->wim_n ? net_value((double)(int64_t)r->wim_sum / r->wim_n) : 0.0;
+	hw_unlock();
+	trace = t;
+}
+
 /* ------------------------------------------------------------------ console */
 
 static char line[128], last[128];
@@ -889,30 +953,27 @@ static void run_line(char *s)
 	int argc = 0;
 	for (char *tok = strtok(s, " \t"); tok && argc < 8; tok = strtok(NULL, " \t"))
 		argv[argc++] = tok;
-	dispatch(argc, argv);
+	run_cmd(argc, argv);
 }
 
 int console_run(int argc, char **argv)
 {
 	if (argc > 1) {                     /* one command, then return */
-		cal_load_or_defaults(0);
-		uint32_t before = cal_checksum(&cal);
-		if (dispatch(argc - 1, argv + 1))
-			return 2;
-		if (cal_checksum(&cal) != before) {
-			cal.sum = cal_checksum(&cal);
-			if (hw->store(&cal, sizeof cal) == 0)
-				printf("(settings saved to %s)\n", hw->store_name);
-		}
-		return failed;
+		oneshot = 1;
+		return console_exec(argc - 1, argv + 1);
 	}
 
 	printf("\r\n\nmclp console %s (%s)\n", VERSION, hw->name);
-	if (platform_check())
+	hw_lock();
+	int e = platform_check();
+	if (!e) {
+		cal_load_or_defaults(1);
+		cal_apply();
+		adc_init();
+	}
+	hw_unlock();
+	if (e)
 		return 1;
-	cal_load_or_defaults(1);
-	cal_apply();
-	adc_init();
 	printf("type help for commands\n");
 	prompt();
 
@@ -928,10 +989,13 @@ int console_run(int argc, char **argv)
 			prompt();
 		}
 		if (ms_now() - t_event > 500) {     /* report new faults and overloads between commands */
+			hw_lock();
 			uint32_t irq = reg_rd(REG_IRQ_STATUS) & (IRQ_FAULT | IRQ_OVERLOAD);
+			if (irq)
+				reg_wr(REG_IRQ_STATUS, irq);
+			hw_unlock();
 			t_event = ms_now();
 			if (irq) {
-				reg_wr(REG_IRQ_STATUS, irq);
 				printf("\n[%s%s]\n", irq & IRQ_FAULT ? "new fault flag, see faults " : "",
 				       irq & IRQ_OVERLOAD ? "overload" : "");
 				prompt();

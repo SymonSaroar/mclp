@@ -25,6 +25,8 @@ typedef struct {
 	uint32_t ring_phys;                           /* the same memory as the DMA sees it */
 	uint32_t ring_bytes;
 	void     (*barrier)(void);                    /* descriptors visible to the DMA */
+	void     (*lock)(void);                       /* Linux: hardware shared by the console and mclpd; */
+	void     (*unlock)(void);                     /* NULL where one program owns it (bare metal) */
 } backend_t;
 
 typedef struct {
@@ -64,5 +66,21 @@ uint32_t dma_status(void);
 
 /* The console (sw/common/console.c): argc <= 1 runs the interactive console, otherwise one command */
 int console_run(int argc, char **argv);
+
+/* For mclpd: one command (argv[0] is the command name) in this process's state; 0, 1 failed, 2 unknown */
+int console_exec(int argc, char **argv);
+
+typedef struct {
+	int      spanned;                             /* values in kg once spanned, RESULT counts before */
+	double   value;                               /* net weight: after zero and tare */
+	int      stable, overload;
+	uint32_t seq;                                 /* RESULT_SEQ: changes with every RESULT update */
+	uint32_t faults[N_CH];                        /* sticky FLT_* flags per channel */
+	uint32_t wim_n;                               /* samples in the last weigh-in-motion result, 0 if none */
+	uint64_t wim_sum;                             /* raw, to tell a new result from the last one */
+	double   wim_value;
+} reading_t;
+
+void console_reading(reading_t *r);
 
 #endif
