@@ -45,8 +45,9 @@ platform.build()
 
 app = client.create_app_component(name="mclp_app", platform=find("mclp_platform/export/**/*.xpfm"),
                                   domain=DOMAIN, template="empty_application")
-src = os.path.join(HERE, "src")
-app.import_files(from_loc=src, files=sorted(os.listdir(src)), dest_dir_in_cmp="src")
+for src in (os.path.join(HERE, "src"), os.path.join(HERE, "..", "common")):    # flat: Vitis builds src/*.c
+    files = sorted(f for f in os.listdir(src) if f.endswith((".c", ".h")))
+    app.import_files(from_loc=os.path.normpath(src), files=files, dest_dir_in_cmp="src")
 app.set_app_config(key="USER_LINK_LIBRARIES", values=["xilffs", "m"])
 app.build()
 vitis.dispose()

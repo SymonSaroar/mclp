@@ -1,5 +1,5 @@
 /*
- * Calibration math and the stored calibration record. No hardware access: sw/baremetal/test/test_calib.c
+ * Calibration math and the stored calibration record. No hardware access: sw/common/test/test_calib.c
  * builds and runs this file on a PC.
  */
 #ifndef CALIB_H

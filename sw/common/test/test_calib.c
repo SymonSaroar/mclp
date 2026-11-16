@@ -1,8 +1,8 @@
 /*
- * Host check of sw/baremetal/src/calib.c: FIR design against coeff/fir64.mem, Q2.30 conversion, the corner
+ * Host check of sw/common/calib.c: FIR design against coeff/fir64.mem, Q2.30 conversion, the corner
  * trim solver on a simulated platform, and the calibration checksum. Run from the repository root:
  *
- *     gcc -O2 -Isw/baremetal/src -o build/test_calib sw/baremetal/test/test_calib.c sw/baremetal/src/calib.c -lm
+ *     gcc -O2 -Isw/common -o build/test_calib sw/common/test/test_calib.c sw/common/calib.c -lm
  *     build/test_calib
  */
 #include <math.h>
