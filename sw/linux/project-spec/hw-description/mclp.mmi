@@ -12,7 +12,7 @@
 <MemInfo Version="1" Minor="9">
   <MemoryArray InstPath="xpm_fifo_samples_inst/xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst" MemoryPrimitive="auto" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="xpm_fifo_samples_inst/xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst" CoreMemory_Width="104" MemoryType="RAM_SDP">
-      <BRAM MemType="RAMB36" Placement="X0Y1" Read_Width_A="72" Read_Width_B="0" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X3Y1" Read_Width_A="72" Read_Width_B="0" SLR_INDEX="0">
         <DataWidth_PortA MSB="71" LSB="0"/>
         <AddressRange_PortA Begin="0" End="511"/>
         <BitLayout_PortA pattern="p8_d64"/>
@@ -21,7 +21,7 @@
         <BitLayout_PortB pattern="p8_d64"/>
         <Parity ON="false" NumBits="0"/>
       </BRAM>
-      <BRAM MemType="RAMB18" Placement="X0Y4" Read_Width_A="36" Read_Width_B="0" SLR_INDEX="0">
+      <BRAM MemType="RAMB18" Placement="X3Y0" Read_Width_A="36" Read_Width_B="0" SLR_INDEX="0">
         <DataWidth_PortA MSB="103" LSB="72"/>
         <AddressRange_PortA Begin="0" End="511"/>
         <BitLayout_PortA pattern="p0_d32"/>
@@ -34,7 +34,7 @@
   </MemoryArray>
   <MemoryArray InstPath="xpm_fifo_records_inst/xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst" MemoryPrimitive="auto" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="xpm_fifo_records_inst/xpm_fifo_base_inst/gen_sdpram.xpm_memory_base_inst" CoreMemory_Width="84" MemoryType="RAM_SDP">
-      <BRAM MemType="RAMB36" Placement="X0Y3" Read_Width_A="72" Read_Width_B="0" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X2Y2" Read_Width_A="72" Read_Width_B="0" SLR_INDEX="0">
         <DataWidth_PortA MSB="71" LSB="0"/>
         <AddressRange_PortA Begin="0" End="511"/>
         <BitLayout_PortA pattern="p8_d64"/>
@@ -43,7 +43,7 @@
         <BitLayout_PortB pattern="p8_d64"/>
         <Parity ON="false" NumBits="0"/>
       </BRAM>
-      <BRAM MemType="RAMB18" Placement="X0Y8" Read_Width_A="36" Read_Width_B="0" SLR_INDEX="0">
+      <BRAM MemType="RAMB18" Placement="X1Y6" Read_Width_A="36" Read_Width_B="0" SLR_INDEX="0">
         <DataWidth_PortA MSB="83" LSB="72"/>
         <AddressRange_PortA Begin="0" End="511"/>
         <BitLayout_PortA pattern="p0_d12"/>
@@ -69,7 +69,7 @@
   </MemoryArray>
   <MemoryArray InstPath="mclp_registers_0/xpm_memory_seq_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="mclp_registers_0/xpm_memory_seq_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
-      <BRAM MemType="RAMB36" Placement="X1Y0" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X2Y0" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
         <BitLayout_PortA pattern="p0_d32"/>
@@ -82,7 +82,7 @@
   </MemoryArray>
   <MemoryArray InstPath="mclp_registers_0/xpm_memory_offset_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="mclp_registers_0/xpm_memory_offset_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
-      <BRAM MemType="RAMB36" Placement="X1Y1" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X1Y2" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
         <BitLayout_PortA pattern="p0_d32"/>
@@ -95,7 +95,7 @@
   </MemoryArray>
   <MemoryArray InstPath="mclp_registers_0/xpm_memory_gain_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="mclp_registers_0/xpm_memory_gain_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
-      <BRAM MemType="RAMB36" Placement="X1Y2" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X1Y1" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
         <BitLayout_PortA pattern="p0_d32"/>
@@ -108,7 +108,7 @@
   </MemoryArray>
   <MemoryArray InstPath="mclp_registers_0/xpm_memory_fir_inst/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="mclp_registers_0/xpm_memory_fir_inst/xpm_memory_base_inst" CoreMemory_Width="32" MemoryType="RAM_TDP">
-      <BRAM MemType="RAMB36" Placement="X2Y2" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X3Y2" Read_Width_A="36" Read_Width_B="36" SLR_INDEX="0">
         <DataWidth_PortA MSB="31" LSB="0"/>
         <AddressRange_PortA Begin="0" End="1023"/>
         <BitLayout_PortA pattern="p0_d32"/>
