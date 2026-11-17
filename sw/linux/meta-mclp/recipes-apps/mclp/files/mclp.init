@@ -8,10 +8,18 @@
 ### END INIT INFO
 
 PID=/run/mclpd.pid
+NTPPID=/run/ntpd.pid
 LOG=/var/log/mclpd.log
 
 case "$1" in
 start)
+	# clock: busybox ntpd from ntp_server in mclpd.conf. TLS checks certificates against the clock, and the
+	# kernel only has the RTC (or the build date) at boot. On each sync ntpd calls this script (step below).
+	NTP=$(sed -n 's/^ntp_server *= *//p' /etc/mclp/mclpd.conf)
+	if [ -n "$NTP" ]; then
+		start-stop-daemon -S -b -m -p $NTPPID -x /usr/sbin/ntpd -- -n -S /etc/init.d/mclp \
+			$(for s in $NTP; do echo "-p $s"; done)
+	fi
 	# generic-uio nodes (mclp.dtsi): the register block and the AXI DMA with the capture ring.
 	# /etc/modprobe.d/mclp-uio.conf sets of_id; a module loaded earlier without it is reloaded.
 	modprobe uio_pdrv_genirq
@@ -36,7 +44,14 @@ start)
 	;;
 stop)
 	start-stop-daemon -K -p $PID -s TERM
-	rm -f $PID
+	start-stop-daemon -K -p $NTPPID
+	rm -f $PID $NTPPID
+	;;
+step|stratum|periodic)
+	# from ntpd -S: the clock is set; keep the board's RTC with it (UTC; the kernel reads it at boot)
+	hwclock -w -u 2>/dev/null
+	;;
+unsync)
 	;;
 restart)
 	$0 stop

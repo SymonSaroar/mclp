@@ -19,8 +19,9 @@ sections below build the SD card image from this folder and boot it.
 | `meta-mclp/recipes-bsp/device-tree/files/mclp.dtsi` | Device-tree additions: UIO node for the register block, AXI DMA handed to UIO, 4 MB reserved for the capture ring |
 | `meta-mclp/recipes-bsp/device-tree/device-tree.bbappend` | Adds `mclp.dtsi` to the generated device tree |
 | `meta-mclp/recipes-apps/mclp/mclp.bb` | Builds `mclp` and `mclpd` from `sw/common` and `mclp/`, installs them with the boot script, the module option and the mclpd settings |
-| `meta-mclp/recipes-apps/mclp/files/mclp.init` | Boot script (`/etc/init.d/mclp`): loads the UIO driver, runs `mclp init`, creates the HTTPS certificate on the first start, starts `mclpd` |
-| `meta-mclp/recipes-apps/mclp/files/mclpd.conf` | `/etc/mclp/mclpd.conf`: HTTPS port, certificate, accounts file, MQTT broker and credentials |
+| `meta-mclp/recipes-apps/mclp/files/mclp.init` | Boot script (`/etc/init.d/mclp`): starts `ntpd` (writes each sync to the RTC), loads the UIO driver, runs `mclp init`, creates the HTTPS certificate on the first start, starts `mclpd` |
+| `meta-mclp/recipes-apps/mclp/files/mclpd.conf` | `/etc/mclp/mclpd.conf`: HTTPS port, certificate, accounts file, MQTT broker and credentials, time servers |
+| `meta-mclp/recipes-core/busybox/` | Turns on busybox `ntpd` (`ntpd.cfg`) |
 | `meta-mclp/recipes-apps/mclp/files/mclp-uio.conf` | `/etc/modprobe.d/mclp-uio.conf`: makes the UIO driver bind `generic-uio` nodes |
 | `mclp/main.c` | `mclp`: argument parsing, keyboard input |
 | `mclp/mclpd.c` | `mclpd`: HTTPS server (libmicrohttpd), MQTT client (libmosquitto), accounts, JSON readings |

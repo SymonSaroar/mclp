@@ -22,6 +22,7 @@
  * and saving to /etc/mclp/mclp.cal. "live" needs a keyboard and is refused.
  */
 #include <crypt.h>
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -74,6 +75,8 @@ static void conf_load(const char *path)
 #define I(name) if (!strcmp(k, #name)) { cfg.name = atoi(v); continue; }
 		S(device) S(prefix) S(users) S(cert) S(key) S(mqtt_host) S(mqtt_user) S(mqtt_password) S(mqtt_ca)
 		I(http_port) I(publish_hz) I(mqtt_port) I(mqtt_tls)
+		if (!strcmp(k, "ntp_server"))
+			continue;                             /* the boot script's, for ntpd */
 		fprintf(stderr, "mclpd: %s: unknown setting \"%s\"\n", path, k);
 	}
 	fclose(f);
@@ -392,7 +395,9 @@ static struct MHD_Daemon *rest_start(void)
 /* ------------------------------------------------------------------ MQTT */
 
 static struct mosquitto *mq;
+static pthread_t mq_thread;
 static volatile int mq_up, faults_due;
+static volatile unsigned mq_retry = 2;           /* seconds to the next attempt after an error libmosquitto ends on */
 
 static void topic(char *t, size_t n, const char *leaf)
 {
@@ -416,6 +421,7 @@ static void on_connect(struct mosquitto *m, void *u, int rc)
 		return;
 	}
 	fprintf(stderr, "mclpd: connected to %s:%d\n", cfg.mqtt_host, cfg.mqtt_port);
+	mq_retry = 2;
 	topic(t, sizeof t, "status");
 	mosquitto_publish(m, NULL, t, 6, "online", 1, true);
 	topic(t, sizeof t, "cmd");
@@ -443,6 +449,37 @@ static void on_message(struct mosquitto *m, void *u, const struct mosquitto_mess
 	publish("cmd/result", run_line(line, OPERATOR, &code), 1, 0);
 }
 
+/* libmosquitto retries a lost or refused connection itself (1 to 30 s), but its loop ends on a TLS error
+   and does not reconnect when entered again. A clock that ntpd has not set yet causes one at boot
+   (certificate not yet valid), so reconnect here: 2 s, doubling to 60 s, back to 2 s after a connection. */
+/* What a failed TLS handshake turns into (libmosquitto reports some as errno EPROTO): point at the usual causes. */
+static const char *tls_hint(int e)
+{
+	return cfg.mqtt_tls && (e == MOSQ_ERR_TLS || e == MOSQ_ERR_PROTOCOL || (e == MOSQ_ERR_ERRNO && errno == EPROTO))
+	       ? " (check mqtt_ca, the broker's certificate and the clock)" : "";
+}
+
+static void *mqtt_run(void *u)
+{
+	(void)u;
+	int e = MOSQ_ERR_SUCCESS;
+	while (!stop) {
+		if (e == MOSQ_ERR_SUCCESS)
+			e = mosquitto_loop_forever(mq, -1, 1); /* returns on stop or on an error it does not retry */
+		if (stop)
+			break;
+		const char *hint = tls_hint(e);
+		fprintf(stderr, "mclpd: MQTT %s:%d: %s%s; retrying in %u s\n", cfg.mqtt_host, cfg.mqtt_port,
+		        mosquitto_strerror(e), hint, mq_retry);
+		for (unsigned s = mq_retry; s && !stop; s--)
+			sleep(1);
+		mq_retry = mq_retry < 30 ? 2 * mq_retry : 60;
+		if (!stop)
+			e = mosquitto_reconnect(mq);          /* TCP and TLS handshake; the loop takes over on success */
+	}
+	return NULL;
+}
+
 static void mqtt_start(void)
 {
 	char t[256];
@@ -464,10 +501,13 @@ static void mqtt_start(void)
 	mosquitto_message_callback_set(mq, on_message);
 	mosquitto_reconnect_delay_set(mq, 1, 30, true);
 	int e = mosquitto_connect_async(mq, cfg.mqtt_host, cfg.mqtt_port, 30);
-	if (e)
-		fprintf(stderr, "mclpd: connecting to %s:%d: %s; retrying\n", cfg.mqtt_host, cfg.mqtt_port,
-		        mosquitto_strerror(e));
-	mosquitto_loop_start(mq);
+	if (e) {
+		const char *hint = tls_hint(e);
+		fprintf(stderr, "mclpd: connecting to %s:%d: %s%s; retrying\n", cfg.mqtt_host, cfg.mqtt_port,
+		        mosquitto_strerror(e), hint);
+	}
+	mosquitto_threaded_set(mq, true);             /* our thread runs the loop; publish only queues */
+	pthread_create(&mq_thread, NULL, mqtt_run, NULL);
 }
 
 /* ------------------------------------------------------------------ main */
@@ -526,7 +566,7 @@ int main(int argc, char **argv)
 		topic(t, sizeof t, "status");
 		mosquitto_publish(mq, NULL, t, 7, "offline", 1, true);
 		mosquitto_disconnect(mq);
-		mosquitto_loop_stop(mq, false);
+		pthread_join(mq_thread, NULL);
 	}
 	if (rest)
 		MHD_stop_daemon(rest);
