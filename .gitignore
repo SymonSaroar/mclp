@@ -13,3 +13,9 @@ sw/linux/project-spec/configs/rootfsconfigs/Kconfig
 sw/linux/project-spec/configs/*.pp
 sw/linux/project-spec/configs/*.dtb
 sw/linux/project-spec/configs/.statistics
+# KiCad per-user and backup files
+*.kicad_prl
+*-backups/
+fp-info-cache
+_autosave-*
+.history/
