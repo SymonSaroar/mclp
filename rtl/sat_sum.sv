@@ -2,8 +2,9 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // sat_sum
-// Sums the 8 channels of a frame into 36 bits. The inputs are clipped to 32 bits in ch_scale, so the sum
-// is exact (35 bits suffice) and the clipping shows up here as `overload` for the frame.
+// Sums the channels of a frame (tlast on the last) into 40 bits. The inputs are clipped to 32 bits in
+// ch_scale, so the sum is exact for up to 256 channels, and the clipping shows up here as `overload` for
+// the frame.
 ////////////////////////////////////////////////////////////////////////////////
 module sat_sum (
 	// Clock and reset
@@ -18,24 +19,24 @@ module sat_sum (
 
 	// Frame sum
 	output reg                m_valid = 0,
-	output reg  signed [35:0] m_data = 0,
+	output reg  signed [39:0] m_data = 0,
 	output reg                m_overload = 0
 );
 
-	reg signed [35:0] acc = 36'sd0;
+	reg signed [39:0] acc = 40'sd0;
 	reg               ov  = 1'b0;
 
 	always @(posedge clk) begin
 		m_valid <= 1'b0;
 		if (rst) begin
-			acc <= 36'sd0;
+			acc <= 40'sd0;
 			ov  <= 1'b0;
 		end else if (s_valid) begin
 			if (s_last) begin
 				m_valid    <= 1'b1;
 				m_data     <= acc + s_data;
 				m_overload <= ov | s_sat;
-				acc        <= 36'sd0;
+				acc        <= 40'sd0;
 				ov         <= 1'b0;
 			end else begin
 				acc <= acc + s_data;

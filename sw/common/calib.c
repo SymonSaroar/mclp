@@ -19,11 +19,12 @@ double from_q30(uint32_t v)
 	return (double)(int32_t)v / 1073741824.0;
 }
 
-void cal_defaults(cal_t *c)
+void cal_defaults(cal_t *c, int n_ch)
 {
 	memset(c, 0, sizeof *c);
 	c->magic   = CAL_MAGIC;
 	c->version = CAL_VERSION;
+	c->n_ch    = (uint32_t)n_ch;
 	for (int ch = 0; ch < CAL_CH; ch++) {
 		c->gain[ch] = q30(1.0);
 		c->trim[ch] = q30(1.0);
@@ -75,12 +76,12 @@ int fir_lowpass(double fc, double fs, int32_t q[CAL_TAPS])
 	return 0;
 }
 
-double solve_trims(int m, const double r[][CAL_CH], double t[CAL_CH])
+double solve_trims(int m, int N, const double r[][CAL_CH], double t[CAL_CH])
 {
-	enum { N = CAL_CH };
-	double a[N][N + 1], s = 0.0, tr = 0.0;
+	static double a[CAL_CH][CAL_CH + 1];        /* 33 KB: off the stack, which is small on bare metal */
+	double s = 0.0, tr = 0.0;
 
-	if (m < 1)
+	if (m < 1 || N < 1 || N > CAL_CH)
 		return 0.0;
 	for (int i = 0; i < m; i++)
 		for (int ch = 0; ch < N; ch++)
@@ -88,7 +89,9 @@ double solve_trims(int m, const double r[][CAL_CH], double t[CAL_CH])
 	s /= m;
 
 	/* normal equations (R'R + lambda I) t = R' s 1 + lambda 1 */
-	memset(a, 0, sizeof a);
+	for (int j = 0; j < N; j++)
+		for (int k = 0; k <= N; k++)
+			a[j][k] = 0.0;
 	for (int i = 0; i < m; i++)
 		for (int j = 0; j < N; j++) {
 			for (int k = 0; k < N; k++)

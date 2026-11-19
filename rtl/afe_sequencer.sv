@@ -14,7 +14,8 @@
 // Lane 0 alone signals RDY; all chips share MCLK and SYNC, so they convert together.
 ////////////////////////////////////////////////////////////////////////////////
 module afe_sequencer #(
-	parameter integer CLK_MHZ = 20
+	parameter integer CLK_MHZ = 20,
+	parameter integer N_CH    = 8
 ) (
 	// Clock and reset
 	input  wire          clk,
@@ -36,14 +37,14 @@ module afe_sequencer #(
 	output reg  [31:0]   tx = 0,
 	input  wire          spi_busy,
 	input  wire          spi_done,
-	input  wire [255:0]  rx,
+	input  wire [32*N_CH-1:0] rx,
 
 	// AD7190 lines
 	input  wire          rdy_n,
 	output reg           sync_n = 1'b1,
 
 	// Results
-	output reg  [255:0]  resp = 0,           // lanes of the last XFER with nrx > 0
+	output reg  [32*N_CH-1:0] resp = 0,      // lanes of the last XFER with nrx > 0
 	output reg           frame_valid = 0,    // one-cycle pulse, frame in rx
 	output reg  [47:0]   frame_ts = 0        // clk count at the DOUT/RDY falling edge of the frame
 );

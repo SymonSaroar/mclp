@@ -209,7 +209,7 @@ static cJSON *faults_json(const reading_t *r)
 	};
 	cJSON *o = cJSON_CreateObject(), *chs = cJSON_AddArrayToObject(o, "channels");
 	int any = 0;
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		cJSON *names = cJSON_CreateArray();
 		for (unsigned i = 0; i < sizeof fl / sizeof fl[0]; i++)
 			if (r->faults[ch] & fl[i].bit)
@@ -227,9 +227,9 @@ static cJSON *settings_json(void)
 	hw->lock();
 	int e = hw->fetch(&c, sizeof c);
 	hw->unlock();
-	int stored = !e && cal_valid(&c);
+	int stored = !e && cal_valid(&c) && c.n_ch == (uint32_t)n_ch;
 	if (!stored)
-		cal_defaults(&c);
+		cal_defaults(&c, n_ch);
 	double k = c.kg_per_count != 0.0 ? c.kg_per_count : 1.0;  /* user unit: kg once spanned */
 	cJSON *o = cJSON_CreateObject();
 	cJSON_AddBoolToObject(o, "stored", stored);
@@ -253,7 +253,7 @@ static cJSON *settings_json(void)
 	}
 	cJSON *off = cJSON_AddArrayToObject(o, "offset"), *g = cJSON_AddArrayToObject(o, "gain");
 	cJSON *t = cJSON_AddArrayToObject(o, "trim");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		cJSON_AddItemToArray(off, cJSON_CreateNumber(c.offset[ch]));
 		cJSON_AddItemToArray(g, cJSON_CreateNumber(from_q30(c.gain[ch])));
 		cJSON_AddItemToArray(t, cJSON_CreateNumber(from_q30(c.trim[ch])));
@@ -529,11 +529,13 @@ int main(int argc, char **argv)
 	hw = &uio_backend;
 	uio_backend.getc = no_key;
 
+	uint32_t id;
 	hw->lock();
-	uint32_t id = reg_rd(REG_ID);
+	int bad_id = id_check(&id);
 	hw->unlock();
-	if (id != FPGA_ID) {
-		fprintf(stderr, "mclpd: ID register reads %08X, expected %08X: wrong bitstream\n", (unsigned)id, FPGA_ID);
+	if (bad_id) {
+		fprintf(stderr, "mclpd: ID register reads %08X, expected %08Xnn: wrong bitstream\n", (unsigned)id,
+		        FPGA_ID_MAP >> 8);
 		return 3;
 	}
 

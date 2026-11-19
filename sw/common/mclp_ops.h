@@ -32,12 +32,13 @@ typedef struct {
 typedef struct {
 	uint64_t ts;                                  /* clk_spi ticks at the frame's RDY edge */
 	unsigned tap;
-	unsigned faults;                              /* bit ch: any flag on channel ch in this frame */
-	int32_t  s[N_CH];
+	uint64_t faults;                              /* bit ch: any flag on channel ch in this frame */
+	int32_t  s[MAX_CH];
 } record_t;
 
 extern const backend_t *hw;
 extern int trace;                                 /* 1: print every register access */
+extern int n_ch;                                  /* channels of the bitstream, set by id_check() */
 
 /* Register access and time */
 uint32_t reg_rd(unsigned off);
@@ -52,6 +53,8 @@ int      key_pressed(void);
 int      key_get(void);                           /* -1 when no key is waiting */
 void     step(const char *fmt, ...);              /* trace heading for a group of accesses */
 
+int id_check(uint32_t *id);                       /* reads ID: 0 with n_ch set, or -1 for another bitstream */
+
 /* Operations */
 int  seq_run(const uint32_t *prog, int words, unsigned timeout_ms);  /* 0, or -1 if it never reached STREAM/END */
 int  seq_default(void);
@@ -60,7 +63,7 @@ void fault_clear(void);
 int  capture_max(void);
 int  capture(unsigned tap, int n, unsigned timeout_ms);              /* one-shot capture; records received */
 void record_get(int i, record_t *r);
-int  capture_mean(unsigned tap, int n, double mean[N_CH]);           /* 0, or -1 short capture, -2 wrong tap */
+int  capture_mean(unsigned tap, int n, double mean[MAX_CH]);           /* 0, or -1 short capture, -2 wrong tap */
 int  result_mean(int n, double *mean);            /* mean of the next n RESULT updates; 0 or -1 */
 uint32_t dma_status(void);
 
@@ -75,7 +78,7 @@ typedef struct {
 	double   value;                               /* net weight: after zero and tare */
 	int      stable, overload;
 	uint32_t seq;                                 /* RESULT_SEQ: changes with every RESULT update */
-	uint32_t faults[N_CH];                        /* sticky FLT_* flags per channel */
+	uint32_t faults[MAX_CH];                      /* sticky FLT_* flags per channel, n_ch used */
 	uint32_t wim_n;                               /* samples in the last weigh-in-motion result, 0 if none */
 	uint64_t wim_sum;                             /* raw, to tell a new result from the last one */
 	double   wim_value;

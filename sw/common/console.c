@@ -20,11 +20,11 @@
 #define NOISE_MAX (3.0 * 295.0)        /* nV rms: 3 x the datasheet figure at FS = 1, gain 128 */
 
 static cal_t  cal;
-static double baseline[N_CH];          /* tap 2 at no load, from cal zero */
+static double baseline[MAX_CH];        /* tap 2 at no load, from cal zero */
 static int    have_baseline;
-static double pos_r[N_CH][N_CH];       /* tap 2 minus baseline, test weight at position i */
-static int    pos_have[N_CH];
-static unsigned adc_id[N_CH];
+static double pos_r[MAX_CH][MAX_CH];   /* tap 2 minus baseline, test weight at position i */
+static int    pos_have[MAX_CH];
+static unsigned adc_id[MAX_CH];
 static int    failed;                  /* a command reported a failure (exit status in one-shot mode) */
 static int    loaded;                  /* cal holds the stored record or the defaults */
 static int    oneshot;                 /* one command, then exit: store what it changed */
@@ -81,7 +81,7 @@ static int fir_apply(double fc)
 static void cal_apply(void)
 {
 	step("calibration: offsets, gains and trims into the coefficient RAMs; stability, WIM, decimation, FIR");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		reg_wr(REG_OFFSET(ch), (uint32_t)cal.offset[ch]);
 		reg_wr(REG_GAIN(ch), cal.gain[ch]);
 		reg_wr(REG_TRIM(ch), cal.trim[ch]);
@@ -98,13 +98,16 @@ static void cal_load_or_defaults(int verbose)
 	cal_t tmp;
 	int e = hw->fetch(&tmp, sizeof tmp);
 	loaded = 1;
-	if (!e && cal_valid(&tmp)) {
+	if (!e && cal_valid(&tmp) && tmp.n_ch == (uint32_t)n_ch) {
 		cal = tmp;
 		if (verbose)
 			printf("calibration loaded from %s\n", hw->store_name);
 	} else {
-		cal_defaults(&cal);
-		if (verbose)
+		cal_defaults(&cal, n_ch);
+		if (verbose && !e && cal_valid(&tmp))
+			printf("calibration in %s is for %u channels, the bitstream has %d; defaults in use\n",
+			       hw->store_name, (unsigned)tmp.n_ch, n_ch);
+		else if (verbose)
 			printf("no calibration in %s (%d); defaults in use. Calibrate with cal zero, cal corner,\n"
 			       "cal solve, then cal save.\n", hw->store_name, e);
 	}
@@ -125,7 +128,7 @@ static const char *flag_names(uint32_t f, char *s)
 static int faults_any(void)
 {
 	int n = 0;
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		n += reg_rd(REG_FAULT(ch)) != 0;
 	return n;
 }
@@ -140,12 +143,12 @@ static int adc_init(void)
 	}
 	step("ADC init: read the ID answers from SEQ_RESP");
 	printf("ADC IDs:");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		adc_id[ch] = reg_rd(REG_SEQ_RESP(ch)) & 0xFFu;
 		ok += (adc_id[ch] & 0x0Fu) == 4u;
 		printf(" %02X", adc_id[ch]);
 	}
-	printf("  (%d of 8 answer as AD7190)\n", ok);
+	printf("  (%d of %d answer as AD7190)\n", ok, n_ch);
 	delay_ms(5);
 	fault_clear();
 	return ok;
@@ -154,10 +157,10 @@ static int adc_init(void)
 static int platform_check(void)
 {
 	step("start-up: ID register and MMCM lock");
-	uint32_t id = reg_rd(REG_ID);
-	if (id != FPGA_ID) {
-		printf("ID register reads %08X, expected %08X: wrong bitstream or no register block\n",
-		       (unsigned)id, FPGA_ID);
+	uint32_t id;
+	if (id_check(&id)) {
+		printf("ID register reads %08X, expected %08Xnn (nn = 01 to 40 channels): wrong bitstream or no\n"
+		       "register block\n", (unsigned)id, FPGA_ID_MAP >> 8);
 		failed = 1;
 		return -1;
 	}
@@ -303,9 +306,9 @@ static void cmd_zero(int argc, char **argv)
 static void cal_show(void)
 {
 	printf("ch    offset    gain     trim   corner responses (tap 2, no-load baseline removed)\n");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		printf("%2d %9d %7.4f %8.5f ", ch, (int)cal.offset[ch], from_q30(cal.gain[ch]), from_q30(cal.trim[ch]));
-		for (int i = 0; i < N_CH; i++)
+		for (int i = 0; i < n_ch; i++)
 			if (pos_have[i])
 				printf(" %9.0f", pos_r[i][ch]);
 		printf("\n");
@@ -317,7 +320,7 @@ static void cal_show(void)
 
 static void cal_zero(void)
 {
-	double m[N_CH], r;
+	double m[MAX_CH], r;
 	step("cal zero: 1 s of per-channel data after the CIC (tap 1)");
 	printf("no load on the platform; measuring 1 s of per-channel data...\n");
 	int e = capture_mean(1, 600, m);
@@ -327,7 +330,7 @@ static void cal_zero(void)
 		return;
 	}
 	step("cal zero: channel means become the offsets");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		cal.offset[ch] = clamp32(m[ch]);
 		reg_wr(REG_OFFSET(ch), (uint32_t)cal.offset[ch]);
 	}
@@ -347,14 +350,14 @@ static void cal_zero(void)
 
 static void cal_corner(int i)
 {
-	double m[N_CH], tot = 0.0;
+	double m[MAX_CH], tot = 0.0;
 	if (!have_baseline) {
 		printf("run \"cal zero\" first (in the same interactive session)\n");
 		failed = 1;
 		return;
 	}
-	if (i < 0 || i >= N_CH) {
-		printf("position 0 to %d\n", N_CH - 1);
+	if (i < 0 || i >= n_ch) {
+		printf("position 0 to %d\n", n_ch - 1);
 		failed = 1;
 		return;
 	}
@@ -365,22 +368,23 @@ static void cal_corner(int i)
 		failed = 1;
 		return;
 	}
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		pos_r[i][ch] = m[ch] - baseline[ch];
 		tot += pos_r[i][ch];
 	}
 	pos_have[i] = 1;
 	printf("share per channel:");
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		printf(" %5.1f%%", tot != 0.0 ? 100.0 * pos_r[i][ch] / tot : 0.0);
 	printf("\n");
 }
 
 static void cal_solve(double kg)
 {
-	double r[N_CH][N_CH], t[N_CH], z = 0.0;
+	static double r[MAX_CH][MAX_CH];           /* 32 KB: off the stack */
+	double t[MAX_CH], z = 0.0;
 	int m = 0, warn = 0;
-	for (int i = 0; i < N_CH; i++)
+	for (int i = 0; i < n_ch; i++)
 		if (pos_have[i])
 			memcpy(r[m++], pos_r[i], sizeof r[0]);
 	if (m == 0 || kg <= 0.0) {
@@ -388,13 +392,13 @@ static void cal_solve(double kg)
 		failed = 1;
 		return;
 	}
-	double s = solve_trims(m, r, t);
+	double s = solve_trims(m, n_ch, r, t);
 	if (s <= 0.0) {
 		printf("the recorded positions do not determine the trims; check the test weight placement\n");
 		failed = 1;
 		return;
 	}
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		if (t[ch] <= 0.0 || t[ch] >= 2.0) {
 			printf("trim %d = %.4f is outside (0, 2): check the wiring of load cell %d\n", ch, t[ch], ch);
 			failed = 1;
@@ -403,7 +407,7 @@ static void cal_solve(double kg)
 		warn |= t[ch] < 0.8 || t[ch] > 1.2;
 	}
 	step("cal solve: corner trims into the trim RAM");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		cal.trim[ch] = q30(t[ch]);
 		reg_wr(REG_TRIM(ch), cal.trim[ch]);
 		z += t[ch] * baseline[ch];
@@ -413,7 +417,7 @@ static void cal_solve(double kg)
 	cal.tare = 0.0;
 	wim_apply();
 	printf("trims from %d position(s):", m);
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		printf(" %.4f", t[ch]);
 	printf("\nspan %.6g kg per count%s\n", cal.kg_per_count,
 	       warn ? "; a trim is more than 20 % from 1, check the cells" : "");
@@ -459,7 +463,7 @@ static void cmd_cal(int argc, char **argv)
 	} else if (!strcmp(sub, "span")) {
 		cal_span(arg);
 	} else if (!strcmp(sub, "reset")) {
-		cal_defaults(&cal);
+		cal_defaults(&cal, n_ch);
 		cal.tare = 0.0;
 		have_baseline = 0;
 		memset(pos_have, 0, sizeof pos_have);
@@ -559,11 +563,14 @@ static void cmd_raw(int argc, char **argv)
 		return;
 	}
 	int got = capture((unsigned)tap, n, 2000u + 2u * (unsigned)n);
-	printf("record,ts,faults,s0,s1,s2,s3,s4,s5,s6,s7\n");
+	printf("record,ts,faults");
+	for (int ch = 0; ch < n_ch; ch++)
+		printf(",s%d", ch);
+	printf("\n");
 	for (int i = 0; i < got; i++) {
 		record_get(i, &r);
-		printf("%d,%llu,%02X", i, (unsigned long long)r.ts, r.faults);
-		for (int ch = 0; ch < N_CH; ch++)
+		printf("%d,%llu,%llX", i, (unsigned long long)r.ts, (unsigned long long)r.faults);
+		for (int ch = 0; ch < n_ch; ch++)
 			printf(",%ld", (long)r.s[ch]);
 		printf("\n");
 	}
@@ -580,7 +587,7 @@ static void cmd_faults(int argc, char **argv)
 		fault_clear();
 		delay_ms(2);
 	}
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		printf("ch%d: %s\n", ch, flag_names(reg_rd(REG_FAULT(ch)), s));
 }
 
@@ -596,9 +603,9 @@ static void selftest_prog(uint32_t p[10], uint32_t config)
 static void cmd_selftest(int argc, char **argv)
 {
 	(void)argc; (void)argv;
-	uint32_t prog[10], flt[N_CH];
-	double sum[N_CH] = {0}, sq[N_CH] = {0};
-	int32_t lo[N_CH], hi[N_CH];
+	uint32_t prog[10], flt[MAX_CH];
+	double sum[MAX_CH] = {0}, sq[MAX_CH] = {0};
+	int32_t lo[MAX_CH], hi[MAX_CH];
 	record_t r;
 	const int n = 480;                  /* 0.1 s at 4800 SPS */
 	int bad = 0;
@@ -615,7 +622,7 @@ static void cmd_selftest(int argc, char **argv)
 	fault_clear();
 	delay_ms(20);
 	step("self-test 1/2: read the fault flags (ERR = open input, NOREF = missing reference)");
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		flt[ch] = reg_rd(REG_FAULT(ch));
 
 	step("self-test 2/2: configuration with channel AIN2-AIN2 (internal short), stream");
@@ -631,13 +638,13 @@ static void cmd_selftest(int argc, char **argv)
 		bad = 1;
 		goto restore;
 	}
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		lo[ch] = 0x7FFFFFFF;
 		hi[ch] = (int32_t)0x80000000;
 	}
 	for (int i = 0; i < n; i++) {
 		record_get(i, &r);
-		for (int ch = 0; ch < N_CH; ch++) {
+		for (int ch = 0; ch < n_ch; ch++) {
 			sum[ch] += r.s[ch];
 			sq[ch]  += (double)r.s[ch] * r.s[ch];
 			if (r.s[ch] < lo[ch]) lo[ch] = r.s[ch];
@@ -645,7 +652,7 @@ static void cmd_selftest(int argc, char **argv)
 		}
 	}
 	printf("ch  open wire  reference  short offset  noise rms     p-p     result\n");
-	for (int ch = 0; ch < N_CH; ch++) {
+	for (int ch = 0; ch < n_ch; ch++) {
 		double mean = sum[ch] / n, rms = sqrt(fmax(sq[ch] / n - mean * mean, 0.0)) * AD_LSB_NV;
 		int ok = !(flt[ch] & (FLT_ERR | FLT_NOREF)) && rms < NOISE_MAX;
 		bad |= !ok;
@@ -667,7 +674,7 @@ static void cmd_bist(int argc, char **argv)
 	record_t r;
 	int bad = 0;
 
-	printf("loopback BIST: AD7190 emulator in the PL replaces the 8 DOUT pins\n");
+	printf("loopback BIST: AD7190 emulator in the PL replaces the %d DOUT pins\n", n_ch);
 	step("BIST: emulator pattern (constant 0x123456 + lane << 16, 4800 frames/s), CTRL.loopback on");
 	reg_wr(REG_LB_CFG, cfg);
 	reg_wr(REG_LB_VALUE, value);
@@ -682,7 +689,7 @@ static void cmd_bist(int argc, char **argv)
 	fault_clear();
 	delay_ms(5);
 	step("BIST check 1: no fault flags with clean emulator data");
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		if (reg_rd(REG_FAULT(ch))) {
 			printf("ch%d: fault %02X with clean emulator data\n", ch, (unsigned)reg_rd(REG_FAULT(ch)));
 			bad++;
@@ -695,7 +702,7 @@ static void cmd_bist(int argc, char **argv)
 	} else {
 		for (int i = 0; i < 48; i++) {
 			record_get(i, &r);
-			for (int ch = 0; ch < N_CH; ch++) {
+			for (int ch = 0; ch < n_ch; ch++) {
 				int32_t want = (int32_t)(((value + ((uint32_t)ch << 16)) & 0xFFFFFFu) << 8) >> 8;
 				if (r.s[ch] != want && bad < 10) {
 					printf("record %d ch%d: %ld, expected %ld\n", i, ch, (long)r.s[ch], (long)want);
@@ -705,12 +712,12 @@ static void cmd_bist(int argc, char **argv)
 		}
 	}
 
-	for (int ch = 0; ch < N_CH; ch++) {             /* every channel's ERR path, then one parity error */
+	for (int ch = 0; ch < n_ch; ch++) {             /* every channel's ERR path, then one parity error */
 		step("BIST check 3: inject ERR on channel %d, only FAULT[%d].ERR may set", ch, ch);
 		fault_clear();
 		reg_wr(REG_LB_CFG, cfg | LB_INJECT_ERR | LB_CH(ch));
 		delay_ms(3);
-		for (int k = 0; k < N_CH; k++) {
+		for (int k = 0; k < n_ch; k++) {
 			uint32_t f = reg_rd(REG_FAULT(k)), want = k == ch ? FLT_ERR : 0u;
 			if ((f & FLT_ERR) != want) {
 				printf("ERR injected on ch%d: ch%d fault %02X\n", ch, k, (unsigned)f);
@@ -720,12 +727,13 @@ static void cmd_bist(int argc, char **argv)
 		reg_wr(REG_LB_CFG, cfg);
 		delay_ms(2);
 	}
-	step("BIST check 4: inject a parity error on channel 5");
+	int pc = n_ch > 5 ? 5 : n_ch - 1;
+	step("BIST check 4: inject a parity error on channel %d", pc);
 	fault_clear();
-	reg_wr(REG_LB_CFG, cfg | LB_INJECT_PARITY | LB_CH(5));
+	reg_wr(REG_LB_CFG, cfg | LB_INJECT_PARITY | LB_CH(pc));
 	delay_ms(3);
-	if (!(reg_rd(REG_FAULT(5)) & FLT_PARITY)) {
-		printf("parity error injected on ch5 not flagged\n");
+	if (!(reg_rd(REG_FAULT(pc)) & FLT_PARITY)) {
+		printf("parity error injected on ch%d not flagged\n", pc);
 		bad++;
 	}
 	reg_wr(REG_LB_CFG, cfg);
@@ -734,7 +742,10 @@ restore:
 	ctrl_set(0, CTRL_LOOPBACK);
 	delay_ms(2);
 	failed |= bad != 0;
-	printf("BIST %s\n", bad ? "FAILED" : "PASSED: data path bit-exact, fault flags on all 8 channels");
+	if (bad)
+		printf("BIST FAILED\n");
+	else
+		printf("BIST PASSED: data path bit-exact, fault flags on all %d channels\n", n_ch);
 	adc_init();
 }
 
@@ -840,11 +851,15 @@ static void hw_lock(void)
 {
 	if (hw->lock)
 		hw->lock();
+	if (!n_ch) {                       /* one-shot commands: the channel count before the calibration */
+		uint32_t id;
+		id_check(&id);                 /* a wrong bitstream leaves n_ch 0; status and init report it */
+	}
 	if (!loaded) {
 		cal_load_or_defaults(0);
 	} else if (hw->lock) {
 		cal_t tmp;
-		if (!hw->fetch(&tmp, sizeof tmp) && cal_valid(&tmp))
+		if (!hw->fetch(&tmp, sizeof tmp) && cal_valid(&tmp) && tmp.n_ch == (uint32_t)n_ch)
 			cal = tmp;
 	}
 }
@@ -886,7 +901,8 @@ void console_reading(reading_t *r)
 	r->value    = net_value((int32_t)reg_rd(REG_RESULT));
 	r->stable   = (st & ST_STABLE) != 0;
 	r->overload = (st & ST_OVERLOAD) != 0;
-	for (int ch = 0; ch < N_CH; ch++)
+	memset(r->faults, 0, sizeof r->faults);   /* mclpd compares the whole array */
+	for (int ch = 0; ch < n_ch; ch++)
 		r->faults[ch] = reg_rd(REG_FAULT(ch));
 	r->wim_sum   = ((uint64_t)reg_rd(REG_WIM_SUM_HI) << 32) | reg_rd(REG_WIM_SUM_LO);
 	r->wim_n     = reg_rd(REG_WIM_COUNT);

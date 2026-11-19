@@ -7,6 +7,7 @@
 
 const backend_t *hw;
 int trace;
+int n_ch;
 
 /* ------------------------------------------------------------------ trace */
 
@@ -69,25 +70,18 @@ static void reg_name(uint32_t addr, char *name, char *what, uint32_t v)
 				sprintf(what, "%ld", (long)(int32_t)v);
 			} else if (off == REG_LB_CFG) {
 				sprintf(what, "%s%s%sch=%u period=%u", v & LB_RAMP ? "ramp " : "", v & LB_INJECT_ERR ? "inject_ERR " : "",
-				        v & LB_INJECT_PARITY ? "inject_parity " : "", (unsigned)(v >> 4 & 7u), (unsigned)(v >> 16));
+				        v & LB_INJECT_PARITY ? "inject_parity " : "", (unsigned)(v >> 4 & 63u), (unsigned)(v >> 16));
 			} else if (off == REG_TRIG_CFG) {
 				sprintf(what, "mode=%u frames=%u", (unsigned)(v & 3u), (unsigned)(v >> 16));
 			} else if (off == REG_ID) {
-				sprintf(what, "%s", v == FPGA_ID ? "mclp_registers" : "UNEXPECTED");
+				if ((v & ~0xFFu) == FPGA_ID_MAP)
+					sprintf(what, "mclp_registers, %u channels", ID_CHANNELS(v));
+				else
+					sprintf(what, "UNEXPECTED");
 			}
 			return;
 		}
-	if (off >= 0x060u && off < 0x080u) {
-		sprintf(name, "FAULT[%u]", (off - 0x060u) / 4u);
-		bits(what, v, FLT_B, 5);
-	} else if (off >= 0x100u && off < 0x160u) {
-		unsigned w = (off - 0x100u) / 4u;
-		sprintf(name, "%s[%u]", w < 8 ? "GAIN" : w < 16 ? "OFFSET" : "TRIM", w % 8u);
-		if (w < 8 || w >= 16)
-			sprintf(what, "%.6f", (double)(int32_t)v / 1073741824.0);
-		else
-			sprintf(what, "%ld", (long)(int32_t)v);
-	} else if (off >= 0x200u && off < 0x300u) {
+	if (off >= 0x200u && off < 0x300u) {
 		sprintf(name, "FIR[%u]", (off - 0x200u) / 4u);
 		sprintf(what, "%ld", (long)(int32_t)v);
 	} else if (off >= 0x400u && off < 0x800u) {
@@ -98,8 +92,16 @@ static void reg_name(uint32_t addr, char *name, char *what, uint32_t v)
 			        (unsigned)(v >> 22 & 63u), (unsigned)(v >> 16 & 63u), (unsigned)(v & 0xFFFFu));
 		else
 			sprintf(what, "data");
-	} else if (off >= 0x800u && off < 0x820u) {
-		sprintf(name, "SEQ_RESP[%u]", (off - 0x800u) / 4u);
+	} else if (off >= 0x800u && off < 0xD00u) {
+		static const char *const ARR[] = { "SEQ_RESP", "GAIN", "OFFSET", "TRIM", "FAULT" };
+		unsigned a = (off - 0x800u) >> 8;
+		sprintf(name, "%s[%u]", ARR[a], (off & 0xFFu) / 4u);
+		if (a == 1 || a == 3)
+			sprintf(what, "%.6f", (double)(int32_t)v / 1073741824.0);
+		else if (a == 2)
+			sprintf(what, "%ld", (long)(int32_t)v);
+		else if (a == 4)
+			bits(what, v, FLT_B, 5);
 	} else {
 		sprintf(name, "?");
 	}
@@ -201,6 +203,15 @@ int key_get(void)
 
 /* ------------------------------------------------------------------ operations */
 
+int id_check(uint32_t *id)
+{
+	*id = reg_rd(REG_ID);
+	if ((*id & ~0xFFu) != FPGA_ID_MAP || ID_CHANNELS(*id) < 1u || ID_CHANNELS(*id) > MAX_CH)
+		return -1;
+	n_ch = (int)ID_CHANNELS(*id);
+	return 0;
+}
+
 int seq_run(const uint32_t *prog, int words, unsigned timeout_ms)
 {
 	step("sequencer: load %d words into the sequencer RAM, then start from word 0", words);
@@ -256,16 +267,20 @@ uint32_t dma_status(void)
 	return mem_rd(DMA_BASE + S2MM_DMASR);
 }
 
-/* Raw capture ring: n descriptors, n 64-byte buffers (one 40-byte record each) and a spare descriptor
- * outside the chain, whose address in TAILDESC starts cyclic mode (PG021). */
+/* Raw capture ring: n descriptors, n buffers of one record each (rounded up to 64 bytes) and a spare
+ * descriptor outside the chain, whose address in TAILDESC starts cyclic mode (PG021). A record is 2 +
+ * ceil(n_ch / 2) 64-bit words: 48 bytes at 8 channels, 272 at 64. */
+static unsigned rec_words(void) { return 2u + ((unsigned)n_ch + 1u) / 2u; }
+static unsigned buf_bytes(void) { return (8u * rec_words() + 63u) & ~63u; }
+
 static int ring_n(void)
 {
-	int n = (int)((hw->ring_bytes - 64u) / 128u);
+	int n = (int)((hw->ring_bytes - 64u) / (64u + buf_bytes()));
 	return n > 8000 ? 8000 : n;
 }
 
 static volatile uint32_t *bd(int i)   { return hw->ring + 16 * i; }
-static volatile uint32_t *buf(int i)  { return hw->ring + 16 * (ring_n() + i); }
+static volatile uint32_t *buf(int i)  { return hw->ring + 16 * ring_n() + buf_bytes() / 4u * (unsigned)i; }
 static uint32_t phys(volatile uint32_t *p) { return hw->ring_phys + 4u * (uint32_t)(p - hw->ring); }
 
 int capture_max(void) { return ring_n() - 100; }
@@ -285,7 +300,7 @@ static void dma_arm(void)
 		d[1] = 0;
 		d[2] = phys(buf(i));
 		d[3] = 0;
-		d[6] = 64;
+		d[6] = buf_bytes();
 		d[7] = 0;
 	}
 	hw->barrier();
@@ -325,17 +340,18 @@ int capture(unsigned tap, int n, unsigned timeout_ms)
 
 void record_get(int i, record_t *r)
 {
-	const volatile uint32_t *w = buf(i);          /* {ts, tap, 0, faults}, {s1, s0}, ... little endian */
-	r->faults = w[0] & 0xFFu;
+	const volatile uint32_t *w = buf(i);          /* {ts, tap, 0}, {s1, s0}, ..., faults; little endian */
+	unsigned f = 2u * (rec_words() - 1u);         /* the fault word */
 	r->tap    = (w[0] >> 14) & 3u;
 	r->ts     = ((uint64_t)w[1] << 16) | (w[0] >> 16);
-	for (int ch = 0; ch < N_CH; ch++)
+	r->faults = ((uint64_t)w[f + 1] << 32) | w[f];
+	for (int ch = 0; ch < n_ch; ch++)
 		r->s[ch] = (int32_t)w[2 + ch];
 }
 
-int capture_mean(unsigned tap, int n, double mean[N_CH])
+int capture_mean(unsigned tap, int n, double mean[MAX_CH])
 {
-	int64_t sum[N_CH] = {0};
+	int64_t sum[MAX_CH] = {0};
 	record_t r;
 
 	if (capture(tap, n, 2000u + 2u * (unsigned)n) < n)
@@ -344,10 +360,10 @@ int capture_mean(unsigned tap, int n, double mean[N_CH])
 		record_get(i, &r);
 		if (r.tap != tap)
 			return -2;
-		for (int ch = 0; ch < N_CH; ch++)
+		for (int ch = 0; ch < n_ch; ch++)
 			sum[ch] += r.s[ch];
 	}
-	for (int ch = 0; ch < N_CH; ch++)
+	for (int ch = 0; ch < n_ch; ch++)
 		mean[ch] = (double)sum[ch] / n;
 	return 0;
 }

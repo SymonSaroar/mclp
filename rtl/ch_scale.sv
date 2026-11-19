@@ -15,19 +15,19 @@ module ch_scale (
 
 	// TDM input stream
 	input  wire               s_valid,
-	input  wire [2:0]         s_ch,
+	input  wire [5:0]         s_ch,
 	input  wire               s_last,
 	input  wire               s_sat,
 	input  wire signed [31:0] s_data,
 
 	// Coefficient RAM read port (read latency 1)
-	output wire [2:0]         coef_ch,
+	output wire [5:0]         coef_ch,
 	input  wire signed [31:0] k,
 	input  wire signed [31:0] offset,
 
 	// TDM output stream
 	output wire               m_valid,
-	output reg  [2:0]         m_ch = 0,
+	output reg  [5:0]         m_ch = 0,
 	output reg                m_last = 0,
 	output reg                m_sat = 0,
 	output reg  signed [31:0] m_data = 0
@@ -37,7 +37,7 @@ module ch_scale (
 	localparam signed [34:0] MIN = -35'sd2147483648;
 
 	reg  [3:0]         v   = 4'd0;
-	reg  [2:0]         ch0 = 3'd0, ch1 = 3'd0, ch2 = 3'd0;
+	reg  [5:0]         ch0 = 6'd0, ch1 = 6'd0, ch2 = 6'd0;
 	reg  [2:0]         l   = 3'd0;
 	reg  [2:0]         s   = 3'd0;
 	reg  signed [31:0] x0  = 32'sd0;

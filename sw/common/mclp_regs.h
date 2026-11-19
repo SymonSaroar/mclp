@@ -8,11 +8,12 @@
 #define MCLP_BASE        0x43C00000u   /* M_AXI_REGS on GP0 */
 #define DMA_BASE          0x40400000u   /* axi_dma S_AXI_LITE */
 
-#define N_CH              8
+#define MAX_CH            64            /* channels the map and records allow; ID[7:0] gives the build's */
 #define FIR_TAPS          64
 #define SEQ_WORDS         256
 #define CIC_RATE_HZ       600.0         /* 4800 SPS / 8 */
-#define FPGA_ID           0x4D4C0208u   /* "ML" (MCLP), register map version 2, 8 channels */
+#define FPGA_ID_MAP       0x4D4C0300u   /* "ML" (MCLP), register map version 3; [7:0] channels */
+#define ID_CHANNELS(id)   ((unsigned)(id) & 0xFFu)
 
 /* Registers (byte offsets from MCLP_BASE) */
 #define REG_ID            0x000u
@@ -35,13 +36,14 @@
 #define REG_TRIG_THRESH   0x050u
 #define REG_LB_CFG        0x054u
 #define REG_LB_VALUE      0x058u
-#define REG_FAULT(ch)     (0x060u + 4u * (unsigned)(ch))
-#define REG_GAIN(ch)      (0x100u + 4u * (unsigned)(ch))    /* Q2.30 */
-#define REG_OFFSET(ch)    (0x120u + 4u * (unsigned)(ch))    /* CIC units */
-#define REG_TRIM(ch)      (0x140u + 4u * (unsigned)(ch))    /* Q2.30 */
 #define REG_FIR(i)        (0x200u + 4u * (unsigned)(i))     /* coefficient i, 18-bit signed */
 #define REG_SEQ(i)        (0x400u + 4u * (unsigned)(i))
+/* per-channel arrays: one 64-word block each */
 #define REG_SEQ_RESP(ch)  (0x800u + 4u * (unsigned)(ch))
+#define REG_GAIN(ch)      (0x900u + 4u * (unsigned)(ch))    /* Q2.30 */
+#define REG_OFFSET(ch)    (0xA00u + 4u * (unsigned)(ch))    /* CIC units */
+#define REG_TRIM(ch)      (0xB00u + 4u * (unsigned)(ch))    /* Q2.30 */
+#define REG_FAULT(ch)     (0xC00u + 4u * (unsigned)(ch))
 
 /* CTRL: level bits read back, pulse bits read as 0 */
 #define CTRL_ENABLE       (1u << 0)
@@ -82,7 +84,7 @@
 #define LB_RAMP           (1u << 0)
 #define LB_INJECT_ERR     (1u << 1)
 #define LB_INJECT_PARITY  (1u << 2)
-#define LB_CH(ch)         ((unsigned)(ch) << 4)
+#define LB_CH(ch)         ((unsigned)(ch) << 4)     /* [9:4] */
 #define LB_PERIOD(n)      ((unsigned)(n) << 16)
 #define LB_PERIOD_4800    4166u         /* clk_spi cycles per frame at 20 MHz */
 

@@ -13,9 +13,10 @@
 // one line in the read case, and the output assignment (through SYNC OUT if it leaves s_axi_aclk).
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_registers #(
+		parameter integer N_CH    = 8,
 		parameter FIR_INIT_FILE  = "fir64.mem",
 		parameter SEQ_INIT_FILE  = "seq_init.mem",
-		parameter UNITY_INIT_FILE = "unity8.mem"
+		parameter UNITY_INIT_FILE = "unity64.mem"
 	) (
 		// AXI4-Lite Interface (s_axi_aclk)
 		input  wire          s_axi_aclk,
@@ -54,7 +55,7 @@ module mclp_registers #(
 		input  wire [7:0]    spi_seq_addr,
 		output wire [31:0]   spi_seq_data,
 		input  wire          spi_seq_busy,
-		input  wire [255:0]  spi_seq_resp,
+		input  wire [32*N_CH-1:0] spi_seq_resp,
 
 		// Processing (clk_dsp)
 		input  wire          clk_dsp,
@@ -72,10 +73,10 @@ module mclp_registers #(
 		output wire          dsp_fir_reload,
 		output wire          dsp_sw_trigger,
 		output wire          dsp_fault_clear,
-		input  wire [2:0]    dsp_gain_ch,
+		input  wire [5:0]    dsp_gain_ch,
 		output wire [31:0]   dsp_gain,
 		output wire [31:0]   dsp_offset,
-		input  wire [2:0]    dsp_trim_ch,
+		input  wire [5:0]    dsp_trim_ch,
 		output wire [31:0]   dsp_trim,
 		input  wire [5:0]    dsp_fir_addr,
 		output wire [31:0]   dsp_fir_coef,
@@ -88,7 +89,7 @@ module mclp_registers #(
 		input  wire          dsp_overload,
 		input  wire          dsp_reload_busy,
 		input  wire          dsp_capture_active,
-		input  wire [39:0]   dsp_faults
+		input  wire [5*N_CH-1:0] dsp_faults
 	);
 
 	//Registers-address----------------------------------------------------------------------------------
@@ -112,30 +113,19 @@ module mclp_registers #(
 	localparam [11:0] REG_RW_0020 = 12'h050;   // TRIG_THRESHOLD
 	localparam [11:0] REG_RW_0021 = 12'h054;   // LOOPBACK_CFG
 	localparam [11:0] REG_RW_0022 = 12'h058;   // LOOPBACK_VALUE
-	localparam [11:0] REG_RO_0024 = 12'h060;   // FAULT CH0
-	localparam [11:0] REG_RO_0025 = 12'h064;   // FAULT CH1
-	localparam [11:0] REG_RO_0026 = 12'h068;   // FAULT CH2
-	localparam [11:0] REG_RO_0027 = 12'h06C;   // FAULT CH3
-	localparam [11:0] REG_RO_0028 = 12'h070;   // FAULT CH4
-	localparam [11:0] REG_RO_0029 = 12'h074;   // FAULT CH5
-	localparam [11:0] REG_RO_0030 = 12'h078;   // FAULT CH6
-	localparam [11:0] REG_RO_0031 = 12'h07C;   // FAULT CH7
-	localparam [11:0] REG_RO_0512 = 12'h800;   // SEQ_RESP CH0
-	localparam [11:0] REG_RO_0513 = 12'h804;   // SEQ_RESP CH1
-	localparam [11:0] REG_RO_0514 = 12'h808;   // SEQ_RESP CH2
-	localparam [11:0] REG_RO_0515 = 12'h80C;   // SEQ_RESP CH3
-	localparam [11:0] REG_RO_0516 = 12'h810;   // SEQ_RESP CH4
-	localparam [11:0] REG_RO_0517 = 12'h814;   // SEQ_RESP CH5
-	localparam [11:0] REG_RO_0518 = 12'h818;   // SEQ_RESP CH6
-	localparam [11:0] REG_RO_0519 = 12'h81C;   // SEQ_RESP CH7
 	//Memory-windows-------------------------------------------------------------------------------------
-	localparam [11:0] MEM_GAIN    = 12'h100;   // 0x100-0x11C, 8 words, Q2.30
-	localparam [11:0] MEM_OFFSET  = 12'h120;   // 0x120-0x13C, 8 words
-	localparam [11:0] MEM_TRIM    = 12'h140;   // 0x140-0x15C, 8 words, Q2.30
 	localparam [11:0] MEM_FIR     = 12'h200;   // 0x200-0x2FC, 64 words, reload order
 	localparam [11:0] MEM_SEQ     = 12'h400;   // 0x400-0x7FC, 256 words
+	// One 64-word block per channel array, channel k at +4k; reads past N_CH give READ_BAD (SEQ_RESP,
+	// FAULT) or unused RAM words (GAIN, OFFSET, TRIM)
+	localparam [11:0] MEM_RESP    = 12'h800;   // SEQ_RESP: the channel's word of the last XFER
+	localparam [11:0] MEM_GAIN    = 12'h900;   // Q2.30
+	localparam [11:0] MEM_OFFSET  = 12'hA00;
+	localparam [11:0] MEM_TRIM    = 12'hB00;   // Q2.30
+	localparam [11:0] MEM_FAULT   = 12'hC00;   // sticky FLT bits [4:0]
 	//---------------------------------------------------------------------------------------------------
-	localparam [31:0] FPGA_ID     = 32'h4D4C_0208;   // "ML" (MCLP), register map version 2, 8 channels
+	localparam [7:0]  N_CH_ID     = N_CH;
+	localparam [31:0] FPGA_ID     = {16'h4D4C, 8'h03, N_CH_ID};   // "ML" (MCLP), register map version 3, channels
 	localparam [31:0] READ_BAD    = 32'h0BAD_0BAD;
 
 	localparam [2:0] SEL_REG    = 3'd0;
@@ -154,11 +144,14 @@ module mclp_registers #(
 	wire        bram_wr = bram_en_a && (bram_we_a == 4'hF);
 	wire        bram_rd = bram_en_a && (bram_we_a == 4'h0);
 
-	wire hit_gain   = bram_addr_a[11:5]  == MEM_GAIN[11:5];
-	wire hit_offset = bram_addr_a[11:5]  == MEM_OFFSET[11:5];
-	wire hit_trim   = bram_addr_a[11:5]  == MEM_TRIM[11:5];
+	wire hit_gain   = bram_addr_a[11:8]  == MEM_GAIN[11:8];
+	wire hit_offset = bram_addr_a[11:8]  == MEM_OFFSET[11:8];
+	wire hit_trim   = bram_addr_a[11:8]  == MEM_TRIM[11:8];
 	wire hit_fir    = bram_addr_a[11:8]  == MEM_FIR[11:8];
 	wire hit_seq    = bram_addr_a[11:10] == MEM_SEQ[11:10];
+	wire hit_resp   = bram_addr_a[11:8]  == MEM_RESP[11:8];
+	wire hit_fault  = bram_addr_a[11:8]  == MEM_FAULT[11:8];
+	wire [5:0] idx  = bram_addr_a[7:2];      // channel in a per-channel block
 
 	//Registers------------------------------------------------------------------------------------------
 	reg         reg_enable         = 1'b1;
@@ -186,9 +179,9 @@ module mclp_registers #(
 
 	//Status (s_axi_aclk)--------------------------------------------------------------------------------
 	wire         locked_axi, seq_busy_axi;
-	wire [255:0] seq_resp_axi;
+	wire [32*N_CH-1:0] seq_resp_axi;
 	wire [3:0]   dsp_levels_axi;     // {capture_active, stable, overload, reload_busy}
-	wire [39:0]  faults_axi;
+	wire [5*N_CH-1:0]  faults_axi;
 	wire         result_valid, wim_valid;
 	wire [31:0]  result_axi;
 	wire [95:0]  wim_axi;
@@ -199,7 +192,9 @@ module mclp_registers #(
 	reg  [63:0]  wim_sum_q   = 64'd0;
 	reg  [31:0]  wim_count_q = 32'd0;
 	reg  [5:0]   status_q    = 6'd0;
-	reg  [39:0]  faults_q    = 40'd0;
+	reg  [5*N_CH-1:0] faults_q = 0;
+	wire [2047:0] resp_pad   = seq_resp_axi;    // zero-extended to 64 channels for the read index
+	wire [319:0]  faults_pad = faults_axi;
 
 	wire [6:0] irq_events = {
 		status_q[5] & ~status[5],        // [6] capture done
@@ -341,23 +336,8 @@ module mclp_registers #(
 				REG_RW_0020: reg_rddata <= reg_trig_threshold;
 				REG_RW_0021: reg_rddata <= reg_loopback_cfg;
 				REG_RW_0022: reg_rddata <= reg_loopback_value;
-				REG_RO_0024: reg_rddata <= {27'd0, faults_axi[4:0]};
-				REG_RO_0025: reg_rddata <= {27'd0, faults_axi[9:5]};
-				REG_RO_0026: reg_rddata <= {27'd0, faults_axi[14:10]};
-				REG_RO_0027: reg_rddata <= {27'd0, faults_axi[19:15]};
-				REG_RO_0028: reg_rddata <= {27'd0, faults_axi[24:20]};
-				REG_RO_0029: reg_rddata <= {27'd0, faults_axi[29:25]};
-				REG_RO_0030: reg_rddata <= {27'd0, faults_axi[34:30]};
-				REG_RO_0031: reg_rddata <= {27'd0, faults_axi[39:35]};
-				REG_RO_0512: reg_rddata <= seq_resp_axi[31:0];
-				REG_RO_0513: reg_rddata <= seq_resp_axi[63:32];
-				REG_RO_0514: reg_rddata <= seq_resp_axi[95:64];
-				REG_RO_0515: reg_rddata <= seq_resp_axi[127:96];
-				REG_RO_0516: reg_rddata <= seq_resp_axi[159:128];
-				REG_RO_0517: reg_rddata <= seq_resp_axi[191:160];
-				REG_RO_0518: reg_rddata <= seq_resp_axi[223:192];
-				REG_RO_0519: reg_rddata <= seq_resp_axi[255:224];
-				default:     reg_rddata <= READ_BAD;
+				default:     reg_rddata <= hit_resp  && idx < N_CH ? resp_pad[32*idx +: 32] :
+				                         hit_fault && idx < N_CH ? {27'd0, faults_pad[5*idx +: 5]} : READ_BAD;
 			endcase
 		end
 	end
@@ -386,14 +366,14 @@ module mclp_registers #(
 	// Memories: port A on the register port, port B read by the consumer
 	////////////////////////////////////////////////////////////////////////////
 	xpm_memory_tdpram #(
-		.ADDR_WIDTH_A(3),                  // DECIMAL
-		.ADDR_WIDTH_B(3),                  // DECIMAL
+		.ADDR_WIDTH_A(6),                  // DECIMAL
+		.ADDR_WIDTH_B(6),                  // DECIMAL
 		.BYTE_WRITE_WIDTH_A(32),           // DECIMAL
 		.BYTE_WRITE_WIDTH_B(32),           // DECIMAL
 		.CLOCKING_MODE("independent_clock"),
 		.MEMORY_INIT_FILE(UNITY_INIT_FILE),// gain 1.0 on every channel
 		.MEMORY_PRIMITIVE("block"),
-		.MEMORY_SIZE(256),                 // DECIMAL, bits
+		.MEMORY_SIZE(2048),                 // DECIMAL, bits
 		.READ_DATA_WIDTH_A(32),            // DECIMAL
 		.READ_DATA_WIDTH_B(32),            // DECIMAL
 		.READ_LATENCY_A(1),                // DECIMAL
@@ -410,7 +390,7 @@ module mclp_registers #(
 		.ena(bram_en_a && hit_gain),
 		.regcea(1'b1),
 		.wea(bram_wr),
-		.addra(bram_addr_a[4:2]),
+		.addra(bram_addr_a[7:2]),
 		.dina(bram_wrdata_a),
 		.injectsbiterra(1'b0),
 		.injectdbiterra(1'b0),
@@ -432,14 +412,14 @@ module mclp_registers #(
 	);
 
 	xpm_memory_tdpram #(
-		.ADDR_WIDTH_A(3),
-		.ADDR_WIDTH_B(3),
+		.ADDR_WIDTH_A(6),
+		.ADDR_WIDTH_B(6),
 		.BYTE_WRITE_WIDTH_A(32),
 		.BYTE_WRITE_WIDTH_B(32),
 		.CLOCKING_MODE("independent_clock"),
 		.MEMORY_INIT_FILE("none"),         // offset 0 on every channel
 		.MEMORY_PRIMITIVE("block"),
-		.MEMORY_SIZE(256),
+		.MEMORY_SIZE(2048),
 		.READ_DATA_WIDTH_A(32),
 		.READ_DATA_WIDTH_B(32),
 		.READ_LATENCY_A(1),
@@ -456,7 +436,7 @@ module mclp_registers #(
 		.ena(bram_en_a && hit_offset),
 		.regcea(1'b1),
 		.wea(bram_wr),
-		.addra(bram_addr_a[4:2]),
+		.addra(bram_addr_a[7:2]),
 		.dina(bram_wrdata_a),
 		.injectsbiterra(1'b0),
 		.injectdbiterra(1'b0),
@@ -478,14 +458,14 @@ module mclp_registers #(
 	);
 
 	xpm_memory_tdpram #(
-		.ADDR_WIDTH_A(3),
-		.ADDR_WIDTH_B(3),
+		.ADDR_WIDTH_A(6),
+		.ADDR_WIDTH_B(6),
 		.BYTE_WRITE_WIDTH_A(32),
 		.BYTE_WRITE_WIDTH_B(32),
 		.CLOCKING_MODE("independent_clock"),
 		.MEMORY_INIT_FILE(UNITY_INIT_FILE),// trim 1.0 on every channel
 		.MEMORY_PRIMITIVE("block"),
-		.MEMORY_SIZE(256),
+		.MEMORY_SIZE(2048),
 		.READ_DATA_WIDTH_A(32),
 		.READ_DATA_WIDTH_B(32),
 		.READ_LATENCY_A(1),
@@ -502,7 +482,7 @@ module mclp_registers #(
 		.ena(bram_en_a && hit_trim),
 		.regcea(1'b1),
 		.wea(bram_wr),
-		.addra(bram_addr_a[4:2]),
+		.addra(bram_addr_a[7:2]),
 		.dina(bram_wrdata_a),
 		.injectsbiterra(1'b0),
 		.injectdbiterra(1'b0),
@@ -759,21 +739,24 @@ module mclp_registers #(
 		.src_in(spi_seq_busy)
 	);
 
-	// ID answers cross bit by bit. They only change during an XFER and software reads them after
-	// the sequencer-done interrupt, many cycles after the last bit settles. Use xpm_cdc_handshake if
-	// software ever polls SEQ_RESP while the list runs.
-	xpm_cdc_array_single #(
-		.DEST_SYNC_FF(2),
-		.INIT_SYNC_FF(1),
-		.SIM_ASSERT_CHK(0),
-		.SRC_INPUT_REG(1),
-		.WIDTH(256)
-	) xpm_cdc_seq_resp_inst (
-		.dest_out(seq_resp_axi),
-		.dest_clk(s_axi_aclk),
-		.src_clk(clk_spi),
-		.src_in(spi_seq_resp)
-	);
+	// ID answers cross bit by bit, one 32-bit macro per channel (WIDTH stops at 1024). They only
+	// change during an XFER and software reads them after the sequencer-done interrupt, many cycles after
+	// the last bit settles. Use xpm_cdc_handshake if software ever polls SEQ_RESP while the list runs.
+	genvar gr;
+	generate for (gr = 0; gr < N_CH; gr = gr + 1) begin : g_resp
+		xpm_cdc_array_single #(
+			.DEST_SYNC_FF(2),
+			.INIT_SYNC_FF(1),
+			.SIM_ASSERT_CHK(0),
+			.SRC_INPUT_REG(1),
+			.WIDTH(32)
+		) xpm_cdc_seq_resp_inst (
+			.dest_out(seq_resp_axi[32*gr +: 32]),
+			.dest_clk(s_axi_aclk),
+			.src_clk(clk_spi),
+			.src_in(spi_seq_resp[32*gr +: 32])
+		);
+	end endgenerate
 
 	xpm_cdc_array_single #(
 		.DEST_SYNC_FF(2),
@@ -794,7 +777,7 @@ module mclp_registers #(
 		.INIT_SYNC_FF(1),
 		.SIM_ASSERT_CHK(0),
 		.SRC_INPUT_REG(1),
-		.WIDTH(40)
+		.WIDTH(5*N_CH)
 	) xpm_cdc_faults_inst (
 		.dest_out(faults_axi),
 		.dest_clk(s_axi_aclk),

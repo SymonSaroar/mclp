@@ -6,11 +6,14 @@
 // Clock domains: aclk for the AXI4-Lite registers and the raw record stream (100 MHz in the reference
 // design), clk_spi (20 MHz) for the AD7190 front end, clk_dsp (50 MHz) for processing. Control and status
 // cross in mclp_registers, the sample and record streams through the two XPM FIFOs here.
+// N_CH (1 to 64) AD7190 chips, one per load cell; the ID register reports the number.
 // Resets: aresetn resets the aclk domain; clk_spi and clk_dsp stay in reset while clk_locked is low.
 // clk_locked must also be low while aresetn is (the reference design resets its MMCM with
 // aresetn); synchronize both into each domain if a design needs them independent.
 ////////////////////////////////////////////////////////////////////////////////
-module mclp_core (
+module mclp_core #(
+	parameter integer N_CH = 8              // channels, 1 to 64
+) (
 	// Clocks and resets
 	input  wire         aclk,
 	input  wire         aresetn,            // asynchronous, active low
@@ -51,7 +54,7 @@ module mclp_core (
 	output wire         adc_din,
 	output wire         adc_cs_n,
 	output wire         adc_sync_n,
-	input  wire [7:0]   adc_dout
+	input  wire [N_CH-1:0] adc_dout
 );
 
 	// Resets, each from its synchronizer, active low
@@ -70,7 +73,7 @@ module mclp_core (
 	wire [7:0]    spi_seq_addr;
 	wire [31:0]   spi_seq_data;
 	wire          spi_seq_busy;
-	wire [255:0]  spi_seq_resp;
+	wire [32*N_CH-1:0] spi_seq_resp;
 
 	// Register file to processing (clk_dsp)
 	wire [31:0]   dsp_stab_band;
@@ -86,10 +89,10 @@ module mclp_core (
 	wire          dsp_fir_reload;
 	wire          dsp_sw_trigger;
 	wire          dsp_fault_clear;
-	wire [2:0]    dsp_gain_ch;
+	wire [5:0]    dsp_gain_ch;
 	wire [31:0]   dsp_gain;
 	wire [31:0]   dsp_offset;
-	wire [2:0]    dsp_trim_ch;
+	wire [5:0]    dsp_trim_ch;
 	wire [31:0]   dsp_trim;
 	wire [5:0]    dsp_fir_addr;
 	wire [31:0]   dsp_fir_coef;
@@ -102,16 +105,16 @@ module mclp_core (
 	wire          dsp_overload;
 	wire          dsp_reload_busy;
 	wire          dsp_capture_active;
-	wire [39:0]   dsp_faults;
+	wire [5*N_CH-1:0] dsp_faults;
 
 	// Sample stream (clk_spi -> clk_dsp) and record stream (clk_dsp -> aclk)
 	wire          fe_tvalid;
 	wire          fe_tready;
-	wire [79:0]   fe_tdata;
+	wire [87:0]   fe_tdata;
 	wire          fe_tlast;
 	wire          smp_tvalid;
 	wire          smp_tready;
-	wire [79:0]   smp_tdata;
+	wire [87:0]   smp_tdata;
 	wire          smp_tlast;
 	wire          rec_tvalid;
 	wire [63:0]   rec_tdata;
@@ -156,9 +159,10 @@ module mclp_core (
 //Register file
 /////////////////////////////////////////////////////////////////////////////
 	mclp_registers #(
+		.N_CH(N_CH),
 		.FIR_INIT_FILE("fir64.mem"),
 		.SEQ_INIT_FILE("seq_init.mem"),
-		.UNITY_INIT_FILE("unity8.mem")
+		.UNITY_INIT_FILE("unity64.mem")
 	) mclp_registers_0 (
 		// AXI4-Lite interface
 		.s_axi_aclk(aclk),
@@ -235,7 +239,9 @@ module mclp_core (
 /////////////////////////////////////////////////////////////////////////////
 //AD7190 front end (clk_spi)
 /////////////////////////////////////////////////////////////////////////////
-	afe_frontend afe_frontend_0 (
+	afe_frontend #(
+		.N_CH(N_CH)
+	) afe_frontend_0 (
 		.clk(clk_spi),
 		.rst(rst_spi),
 		.enable(spi_enable),
@@ -266,7 +272,7 @@ module mclp_core (
 		.FIFO_MEMORY_TYPE("auto"),
 		.PACKET_FIFO("false"),
 		.PROG_FULL_THRESH(10),          // DECIMAL
-		.TDATA_WIDTH(80),               // DECIMAL
+		.TDATA_WIDTH(88),               // DECIMAL
 		.USE_ADV_FEATURES("1000")
 	) xpm_fifo_samples_inst (
 		.s_aresetn(rstn_spi),
@@ -275,8 +281,8 @@ module mclp_core (
 		.s_axis_tvalid(fe_tvalid),
 		.s_axis_tready(fe_tready),
 		.s_axis_tdata(fe_tdata),
-		.s_axis_tstrb({10{1'b1}}),
-		.s_axis_tkeep({10{1'b1}}),
+		.s_axis_tstrb({11{1'b1}}),
+		.s_axis_tkeep({11{1'b1}}),
 		.s_axis_tlast(fe_tlast),
 		.s_axis_tid(1'b0),
 		.s_axis_tdest(1'b0),
@@ -305,7 +311,9 @@ module mclp_core (
 /////////////////////////////////////////////////////////////////////////////
 //Processing (clk_dsp)
 /////////////////////////////////////////////////////////////////////////////
-	mclp_dsp mclp_dsp_0 (
+	mclp_dsp #(
+		.N_CH(N_CH)
+	) mclp_dsp_0 (
 		.clk(clk_dsp),
 		.rst(rst_dsp),
 		.stab_band(dsp_stab_band),
@@ -349,14 +357,14 @@ module mclp_core (
 	);
 
 	// CDC FIFO 2: raw records clk_dsp -> aclk, into the DMA. Records start only below the
-	// programmable-full threshold, and a 5-word record always fits above it.
+	// programmable-full threshold, and the longest record (34 words at 64 channels) fits above it.
 	xpm_fifo_axis #(
 		.CDC_SYNC_STAGES(2),
 		.CLOCKING_MODE("independent_clock"),
 		.FIFO_DEPTH(512),
 		.FIFO_MEMORY_TYPE("auto"),
 		.PACKET_FIFO("false"),
-		.PROG_FULL_THRESH(490),
+		.PROG_FULL_THRESH(448),
 		.TDATA_WIDTH(64),
 		.USE_ADV_FEATURES("1002")       // prog_full_axis
 	) xpm_fifo_records_inst (

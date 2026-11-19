@@ -42,49 +42,50 @@ static void test_q30(void)
 	CHECK(fabs(from_q30(q30(0.9876543)) - 0.9876543) < 1e-9, "q30 round trip");
 }
 
-/* Platform: test weight W at position i puts share[i][ch] of it on cell ch; cell ch reads sens[ch] per kg. */
-static void test_trims(void)
+/* Platform of n cells: test weight W at position i puts share[i][ch] of it on cell ch; cell ch reads sens[ch]
+ * per kg. */
+static void test_trims(int n)
 {
-	double sens[CAL_CH], r[CAL_CH][CAL_CH], t[CAL_CH], W = 50.0;
+	static double r[CAL_CH][CAL_CH], z[2][CAL_CH];
+	double sens[CAL_CH], t[CAL_CH], W = 50.0;
 	srand(7);
-	for (int ch = 0; ch < CAL_CH; ch++)
+	for (int ch = 0; ch < n; ch++)
 		sens[ch] = 1000.0 * (0.9 + 0.2 * rand() / RAND_MAX);
-	for (int i = 0; i < CAL_CH; i++) {
+	for (int i = 0; i < n; i++) {
 		double share[CAL_CH], tot = 0.0;
-		for (int ch = 0; ch < CAL_CH; ch++) {
-			int d = abs(ch - i) < CAL_CH - abs(ch - i) ? abs(ch - i) : CAL_CH - abs(ch - i);   /* ring distance */
+		for (int ch = 0; ch < n; ch++) {
+			int d = abs(ch - i) < n - abs(ch - i) ? abs(ch - i) : n - abs(ch - i);   /* ring distance */
 			share[ch] = d == 0 ? 6.0 : d == 1 ? 1.5 : 0.25;
 			tot += share[ch];
 		}
-		for (int ch = 0; ch < CAL_CH; ch++)
+		for (int ch = 0; ch < n; ch++)
 			r[i][ch] = W * share[ch] / tot * sens[ch];
 	}
 
-	double s = solve_trims(CAL_CH, r, t);
-	CHECK(s > 0.0, "8 positions: no solution");
-	for (int i = 0; i < CAL_CH; i++) {
+	double s = solve_trims(n, n, r, t);
+	CHECK(s > 0.0, "%d positions: no solution", n);
+	for (int i = 0; i < n; i++) {
 		double y = 0.0;
-		for (int ch = 0; ch < CAL_CH; ch++)
+		for (int ch = 0; ch < n; ch++)
 			y += r[i][ch] * t[ch];
-		CHECK(fabs(y / s - 1.0) < 1e-6, "position %d reads %.9f of the common sum", i, y / s);
+		CHECK(fabs(y / s - 1.0) < 1e-6, "%d channels: position %d reads %.9f of the common sum", n, i, y / s);
 	}
-	for (int ch = 1; ch < CAL_CH; ch++)                        /* trims undo the sensitivity spread */
-		CHECK(fabs(t[ch] * sens[ch] / (t[0] * sens[0]) - 1.0) < 1e-6, "trim %d", ch);
+	for (int ch = 1; ch < n; ch++)                             /* trims undo the sensitivity spread */
+		CHECK(fabs(t[ch] * sens[ch] / (t[0] * sens[0]) - 1.0) < 1e-6, "%d channels: trim %d", n, ch);
 
-	double s4 = solve_trims(4, r, t);                           /* fewer positions: finite, near 1 */
-	CHECK(s4 > 0.0, "4 positions: no solution");
-	for (int ch = 0; ch < CAL_CH; ch++)
-		CHECK(t[ch] > 0.5 && t[ch] < 1.5, "4 positions: trim %d = %f", ch, t[ch]);
+	double s4 = solve_trims(4, n, r, t);                        /* fewer positions: finite, near 1 */
+	CHECK(s4 > 0.0, "%d channels, 4 positions: no solution", n);
+	for (int ch = 0; ch < n; ch++)
+		CHECK(t[ch] > 0.5 && t[ch] < 1.5, "%d channels, 4 positions: trim %d = %f", n, ch, t[ch]);
 
-	double z[2][CAL_CH] = {{0}};
-	CHECK(solve_trims(2, z, t) == 0.0, "all-zero responses must be rejected");
+	CHECK(solve_trims(2, n, z, t) == 0.0, "all-zero responses must be rejected");
 }
 
 static void test_cal(void)
 {
 	cal_t c;
-	cal_defaults(&c);
-	CHECK(cal_valid(&c), "defaults invalid");
+	cal_defaults(&c, 8);
+	CHECK(cal_valid(&c) && c.n_ch == 8, "defaults invalid");
 	c.trim[3] = q30(1.01);
 	CHECK(!cal_valid(&c), "checksum missed a change");
 	c.sum = cal_checksum(&c);
@@ -95,7 +96,8 @@ int main(void)
 {
 	test_fir();
 	test_q30();
-	test_trims();
+	test_trims(8);
+	test_trims(MAX_CH);
 	test_cal();
 	printf(fails ? "test_calib: %d FAILED\n" : "test_calib: all passed\n", fails);
 	return fails != 0;

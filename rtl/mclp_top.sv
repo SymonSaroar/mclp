@@ -8,7 +8,9 @@
 // clk_dsp (50 MHz) from the MMCM. The PS reset holds the MMCM in reset, so locked is low whenever it is
 // (mclp_core's reset contract).
 ////////////////////////////////////////////////////////////////////////////////
-module mclp_top (
+module mclp_top #(
+	parameter integer N_CH = 8              // the ZC702 card has 8; other counts for simulation
+) (
 	// PS DDR and fixed IO
 	inout  wire [14:0]  DDR_addr,
 	inout  wire [2:0]   DDR_ba,
@@ -37,7 +39,7 @@ module mclp_top (
 	output wire         adc_din,
 	output wire         adc_cs_n,
 	output wire         adc_sync_n,
-	input  wire [7:0]   adc_dout
+	input  wire [N_CH-1:0] adc_dout
 );
 
 	// PS block design (clk_axi)
@@ -147,7 +149,9 @@ module mclp_top (
 /////////////////////////////////////////////////////////////////////////////
 //MCLP core
 /////////////////////////////////////////////////////////////////////////////
-	mclp_core mclp_core_0 (
+	mclp_core #(
+		.N_CH(N_CH)
+	) mclp_core_0 (
 		.aclk(clk_axi),
 		.aresetn(rst_axi_n[0]),
 		.clk_spi(clk_spi),

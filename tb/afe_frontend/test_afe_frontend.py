@@ -23,7 +23,7 @@ def s24(v):
 
 
 def beat(d):
-    return {"ts": d >> 32, "flags": (d >> 27) & 0x1F, "ch": (d >> 24) & 7, "data": s24(d & 0xFF_FFFF)}
+    return {"ts": d >> 35, "flags": (d >> 30) & 0x1F, "ch": (d >> 24) & 0x3F, "data": s24(d & 0xFF_FFFF)}
 
 
 async def frames(dut, n):

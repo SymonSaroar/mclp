@@ -6,7 +6,9 @@
 // coefficient reload, weight, result decimation, stability, WIM, sticky faults and raw capture.
 // Every input is already in clk_dsp (mclp_registers does the crossings); configuration is quasi-static.
 ////////////////////////////////////////////////////////////////////////////////
-module mclp_dsp (
+module mclp_dsp #(
+	parameter integer N_CH = 8
+) (
 	// Clock and reset
 	input  wire               clk,
 	input  wire               rst,
@@ -27,10 +29,10 @@ module mclp_dsp (
 	input  wire               fault_clear,
 
 	// Coefficient RAM read ports (mclp_registers, read latency 1)
-	output wire [2:0]         gain_ch,
+	output wire [5:0]         gain_ch,
 	input  wire [31:0]        gain,
 	input  wire [31:0]        offset,
-	output wire [2:0]         trim_ch,
+	output wire [5:0]         trim_ch,
 	input  wire [31:0]        trim,
 	output wire [5:0]         fir_addr,
 	input  wire [31:0]        fir_coef,
@@ -38,7 +40,7 @@ module mclp_dsp (
 	// AFE beats {ts, flags, ch, data} from CDC FIFO 1
 	input  wire               s_valid,
 	output wire               s_ready,
-	input  wire [79:0]        s_data,
+	input  wire [87:0]        s_data,
 	input  wire               s_last,
 
 	// Results and status (to mclp_registers)
@@ -51,7 +53,7 @@ module mclp_dsp (
 	output reg                overload = 0,
 	output wire               reload_busy,
 	output wire               capture_active,
-	output reg  [39:0]        faults = 0,          // 5 sticky bits per channel
+	output reg  [5*N_CH-1:0]  faults = 0,          // 5 sticky bits per channel
 
 	// Raw records to CDC FIFO 2
 	output wire               m_valid,
@@ -60,45 +62,49 @@ module mclp_dsp (
 	input  wire               raw_full
 );
 
-	localparam signed [39:0] W_MAX = 40'sd2147483647;
-	localparam signed [39:0] W_MIN = -40'sd2147483648;
+	localparam signed [63:0] W_MAX = 64'sd2147483647;
+	localparam signed [63:0] W_MIN = -64'sd2147483648;
+	localparam integer       SHIFT = 20 + $clog2(N_CH);   // FIR taps sum to 2^20; DC gain 1 / 2^clog2(N_CH)
 
 	/////////////////////////////////////////////////////////////////////////////
-	// AFE beats: frame timestamp and fault bits for the raw header, sticky faults
+	// AFE beats: frame timestamp and fault bits for raw records, sticky faults
 	/////////////////////////////////////////////////////////////////////////////
 	wire        cic_ready;
 	wire        afe_beat = s_valid && cic_ready;
-	wire [2:0]  afe_ch   = s_data[26:24];
-	wire [4:0]  afe_flag = s_data[31:27];
+	wire [5:0]  afe_ch   = s_data[29:24];
+	wire [4:0]  afe_flag = s_data[34:30];
+	wire [47:0] afe_ts   = s_data[82:35];
 	reg  [47:0] frame_ts     = 48'd0;
-	reg  [7:0]  frame_faults = 8'd0;
-	reg  [7:0]  beat_faults  = 8'd0;
+	reg  [63:0] frame_faults = 64'd0;                // bit per channel, last complete frame
+	reg  [63:0] beat_faults  = 64'd0;                // this frame so far
 
 	assign s_ready = cic_ready;
 
 	always @(posedge clk) begin
 		if (rst || fault_clear)
-			faults <= 40'd0;
+			faults <= 0;
 		else if (afe_beat)
 			faults[afe_ch*5 +: 5] <= faults[afe_ch*5 +: 5] | afe_flag;
 		if (afe_beat) begin
 			beat_faults[afe_ch] <= |afe_flag;
-			if (afe_ch == 3'd0)
-				frame_ts <= s_data[79:32];
+			if (afe_ch == 6'd0)
+				frame_ts <= afe_ts;
 			if (s_last)
-				frame_faults <= {|afe_flag, beat_faults[6:0]};
+				frame_faults <= (beat_faults & ~(64'd1 << afe_ch)) | ({63'd0, |afe_flag} << afe_ch);
 		end
 	end
 
 	/////////////////////////////////////////////////////////////////////////////
-	// CIC: 8 channels, R = 8, N = 3, 24 -> 32 bits. The channel is counted between tlasts.
+	// CIC: N_CH channels, R = 8, N = 3, 24 -> 32 bits. The channel is counted between tlasts.
 	/////////////////////////////////////////////////////////////////////////////
 	wire               cic_valid;
 	wire               cic_last;
 	wire signed [31:0] cic_data;
-	reg  [2:0]         cic_ch = 3'd0;
+	reg  [5:0]         cic_ch = 6'd0;
 
-	mclp_cic mclp_cic_0 (
+	mclp_cic #(
+		.CH(N_CH)
+	) mclp_cic_0 (
 		.aclk(clk),
 		.aresetn(!rst),
 		.s_axis_data_tdata(s_data[23:0]),
@@ -115,9 +121,9 @@ module mclp_dsp (
 
 	always @(posedge clk) begin
 		if (rst)
-			cic_ch <= 3'd0;
+			cic_ch <= 6'd0;
 		else if (cic_valid)
-			cic_ch <= cic_last ? 3'd0 : cic_ch + 1'b1;
+			cic_ch <= cic_last ? 6'd0 : cic_ch + 1'b1;
 	end
 
 	/////////////////////////////////////////////////////////////////////////////
@@ -126,9 +132,9 @@ module mclp_dsp (
 	wire               go_valid, go_last, go_sat;
 	wire               tr_valid, tr_last, tr_sat;
 	wire               sum_valid, sum_overload;
-	wire [2:0]         go_ch, tr_ch;
+	wire [5:0]         go_ch, tr_ch;
 	wire signed [31:0] go_data, tr_data;
-	wire signed [35:0] sum_data;
+	wire signed [39:0] sum_data;
 
 	ch_scale ch_scale_gain (
 		.clk(clk),
@@ -188,12 +194,14 @@ module mclp_dsp (
 	wire [23:0]        reload_data;
 	wire               config_valid, config_ready;
 
-	mclp_fir mclp_fir_0 (
+	mclp_fir #(
+		.DW(40)
+	) mclp_fir_0 (
 		.aresetn(!rst),
 		.aclk(clk),
 		.s_axis_data_tvalid(sum_valid),
 		.s_axis_data_tready(),
-		.s_axis_data_tdata({{4{sum_data[35]}}, sum_data}),
+		.s_axis_data_tdata(sum_data),
 		.s_axis_config_tvalid(config_valid),
 		.s_axis_config_tready(config_ready),
 		.s_axis_config_tdata(8'd0),
@@ -225,12 +233,13 @@ module mclp_dsp (
 	);
 
 	/////////////////////////////////////////////////////////////////////////////
-	// Weight: FIR output >> 23, clipped to 32 bits. The taps sum to 2^20, so the DC gain is 1/8: eight
-	// channels at full scale and unity gain (8 x 2^31) fit 32 bits, and only a channel that clipped in
-	// ch_scale (OVERLOAD) or FIR overshoot on a full-scale step can clip the weight.
+	// Weight: FIR output >> SHIFT, clipped to 32 bits. The taps sum to 2^20, so the DC gain is
+	// 1 / 2^clog2(N_CH) (1/8 for 8 channels): every channel at full scale and unity gain (N_CH x 2^31) fits
+	// 32 bits, and only a channel that clipped in ch_scale (OVERLOAD) or FIR overshoot on a full-scale step
+	// can clip the weight. RESULT counts per ADC code: 256 / 2^clog2(N_CH).
 	/////////////////////////////////////////////////////////////////////////////
-	wire signed [39:0] y40    = fir_data[62:23];
-	wire signed [31:0] weight = (y40 > W_MAX) ? W_MAX[31:0] : (y40 < W_MIN) ? W_MIN[31:0] : y40[31:0];
+	wire signed [63:0] y      = $signed(fir_data) >>> SHIFT;
+	wire signed [31:0] weight = (y > W_MAX) ? W_MAX[31:0] : (y < W_MIN) ? W_MIN[31:0] : y[31:0];
 
 	stability_detect stability_detect_0 (
 		.clk(clk),
@@ -281,11 +290,10 @@ module mclp_dsp (
 	// Raw capture: tap select, record formatter and trigger
 	/////////////////////////////////////////////////////////////////////////////
 	reg         tap_valid;
-	reg  [2:0]  tap_ch;
+	reg  [5:0]  tap_ch;
 	reg  [31:0] tap_data;
-	// header: tap 0 stamps its own frame; later taps take the newest frame. Fault bits are the last
-	// complete frame's.
-	wire [47:0] rec_ts = (raw_tap == 2'd0) ? s_data[79:32] : frame_ts;
+	// Timestamp and fault word: tap 0 has its own frame's; later taps take the newest complete frame.
+	wire [47:0] rec_ts = (raw_tap == 2'd0) ? afe_ts : frame_ts;
 
 	always @(*) begin
 		case (raw_tap)
@@ -296,7 +304,9 @@ module mclp_dsp (
 		endcase
 	end
 
-	raw_capture raw_capture_0 (
+	raw_capture #(
+		.N_CH(N_CH)
+	) raw_capture_0 (
 		.clk(clk),
 		.rst(rst),
 		.enable(raw_enable),

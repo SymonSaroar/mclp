@@ -1,4 +1,6 @@
 """raw_capture: record format, continuous mode with FIFO-full skips, one-shot, threshold trigger.
+Runs at 8 channels (even), 3 (odd: the last sample word is padded) and 1 (header, sample and fault word
+from a single beat).
 
     python tb/raw_capture/test_raw_capture.py
 """
@@ -12,6 +14,8 @@ from cocotb.triggers import ClockCycles, RisingEdge
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 M32 = 0xFFFF_FFFF
+TS = 0x1234_5678_9ABC
+FAULTS = 0x8000_0000_0000_0081
 
 
 async def setup(dut, mode, frames=0, threshold=0):
@@ -20,15 +24,17 @@ async def setup(dut, mode, frames=0, threshold=0):
         getattr(dut, s).value = 0
     dut.mode.value, dut.frames.value, dut.threshold.value, dut.tap.value = mode, frames, threshold, 2
     dut.sum.value = dut.s_ch.value = dut.s_data.value = 0
-    dut.ts.value, dut.faults.value = 0x1234_5678_9ABC, 0x81
+    dut.ts.value, dut.faults.value = TS, FAULTS
     dut.rst.value = 1
     await ClockCycles(dut.clk, 2)
     dut.rst.value = 0
     dut.enable.value = 1
+    return int(dut.N_CH.value)
 
 
-async def run_frames(dut, n, full_at=(), sums=None):
-    """Send n frames (sample = frame * 16 + ch, one beat every 2 cycles); collect output words."""
+async def run_frames(dut, n_ch, n, full_at=(), sums=None):
+    """Send n frames (sample = frame * 256 + ch), one beat every 4 cycles as mclp_cic paces them; collect
+    output words."""
     words = []
 
     async def collect():
@@ -45,58 +51,60 @@ async def run_frames(dut, n, full_at=(), sums=None):
             dut.sum_valid.value, dut.sum.value = 1, sums[f]
             await RisingEdge(dut.clk)
             dut.sum_valid.value = 0
-        for ch in range(8):
+        for ch in range(n_ch):
             await RisingEdge(dut.clk)
-            dut.s_valid.value, dut.s_ch.value, dut.s_data.value = 1, ch, (f * 16 + ch) & M32
+            dut.s_valid.value, dut.s_ch.value, dut.s_data.value = 1, ch, (f * 256 + ch) & M32
             await RisingEdge(dut.clk)
             dut.s_valid.value = 0
+            await ClockCycles(dut.clk, 2)
     await ClockCycles(dut.clk, 4)
     task.cancel()
     return words
 
 
-def record(f):
-    s = [f * 16 + ch for ch in range(8)]
-    return [((0x1234_5678_9ABC << 16) | (2 << 14) | 0x81, 0)] + \
-        [((s[i + 1] << 32) | s[i], int(i == 6)) for i in range(0, 8, 2)]
+def record(f, n_ch):
+    s = [f * 256 + ch for ch in range(n_ch)] + [0]
+    return [((TS << 16) | (2 << 14), 0)] + \
+        [((s[i + 1] << 32) | s[i], 0) for i in range(0, n_ch, 2)] + [(FAULTS, 1)]
 
 
 @cocotb.test()
 async def continuous_with_skips(dut):
-    await setup(dut, mode=0)
-    words = await run_frames(dut, 5, full_at={2})
-    assert words == record(0) + record(1) + record(3) + record(4)
+    n_ch = await setup(dut, mode=0)
+    words = await run_frames(dut, n_ch, 5, full_at={2})
+    assert words == record(0, n_ch) + record(1, n_ch) + record(3, n_ch) + record(4, n_ch)
     assert int(dut.active.value) == 1
 
 
 @cocotb.test()
 async def one_shot(dut):
-    await setup(dut, mode=1, frames=2)
-    assert await run_frames(dut, 2) == []
+    n_ch = await setup(dut, mode=1, frames=2)
+    assert await run_frames(dut, n_ch, 2) == []
     assert int(dut.active.value) == 0
     dut.sw_trigger.value = 1
     await RisingEdge(dut.clk)
     dut.sw_trigger.value = 0
     await RisingEdge(dut.clk)
     assert int(dut.active.value) == 1
-    words = await run_frames(dut, 4)
-    assert words == record(0) + record(1)
+    words = await run_frames(dut, n_ch, 4)
+    assert words == record(0, n_ch) + record(1, n_ch)
     assert int(dut.active.value) == 0
 
 
 @cocotb.test()
 async def threshold_trigger(dut):
-    await setup(dut, mode=2, frames=2, threshold=1000)
+    n_ch = await setup(dut, mode=2, frames=2, threshold=1000)
     dut.sw_trigger.value = 1
     await RisingEdge(dut.clk)
     dut.sw_trigger.value = 0
-    words = await run_frames(dut, 6, sums=[0, 500, 999, 1001, 0, 0])
-    assert words == record(3) + record(4)
+    words = await run_frames(dut, n_ch, 6, sums=[0, 500, 999, 1001, 0, 0])
+    assert words == record(3, n_ch) + record(4, n_ch)
 
 
 def test_raw_capture():
     from runner import run
-    run("raw_capture", ["rtl/raw_capture.sv"], __file__)
+    for n_ch in (8, 3, 1):
+        run("raw_capture", ["rtl/raw_capture.sv"], __file__, parameters={"N_CH": n_ch})
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ module afe_tb (
 	output logic [255:0] seq_resp,
 	output logic         m_valid,
 	input  logic         m_ready,
-	output logic [79:0]  m_data,
+	output logic [87:0]  m_data,
 	output logic         m_last
 );
 	logic [31:0] ram [256];

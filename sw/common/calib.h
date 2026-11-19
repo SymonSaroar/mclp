@@ -7,13 +7,16 @@
 
 #include <stdint.h>
 
-#define CAL_CH       8
+#include "mclp_regs.h"
+
+#define CAL_CH       MAX_CH      /* record arrays; n_ch of them in use */
 #define CAL_TAPS     64
 #define CAL_MAGIC    0x4C414357u   /* "WCAL" */
-#define CAL_VERSION  3u            /* layout of cal_t; a record of another version is not loaded */
+#define CAL_VERSION  4u            /* layout of cal_t; a record of another version is not loaded */
 
 typedef struct {
 	uint32_t magic, version;
+	uint32_t n_ch;                 /* channels the record was made for */
 	int32_t  offset[CAL_CH];       /* CIC units, subtracted before the gain */
 	uint32_t gain[CAL_CH];         /* Q2.30 */
 	uint32_t trim[CAL_CH];         /* Q2.30, corner compensation */
@@ -31,7 +34,7 @@ typedef struct {
 
 uint32_t q30(double k);                       /* saturates to [-2, 2) */
 double   from_q30(uint32_t v);
-void     cal_defaults(cal_t *c);
+void     cal_defaults(cal_t *c, int n_ch);
 uint32_t cal_checksum(const cal_t *c);
 int      cal_valid(const cal_t *c);
 
@@ -41,8 +44,8 @@ int fir_lowpass(double fc, double fs, int32_t taps[CAL_TAPS]);
 
 /* Corner trims from m test positions: r[i][ch] is channel ch's response (gain and offset applied, no-load
  * baseline removed) with the test weight at position i. Finds t so that sum_ch r[i][ch] t[ch] is the same
- * for every position, keeping the mean sum. With fewer than 8 positions the trims are pulled toward 1.
- * Returns the common sum, or 0 when the positions do not determine the trims. */
-double solve_trims(int m, const double r[][CAL_CH], double t[CAL_CH]);
+ * for every position, keeping the mean sum, over n channels. With fewer positions than channels the trims
+ * are pulled toward 1. Returns the common sum, or 0 when the positions do not determine the trims. */
+double solve_trims(int m, int n, const double r[][CAL_CH], double t[CAL_CH]);
 
 #endif

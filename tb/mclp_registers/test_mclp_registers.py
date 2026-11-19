@@ -79,7 +79,7 @@ async def count_pulses(clk, sig, cycles, out):
 @cocotb.test()
 async def registers_and_pulses(dut):
     await setup(dut)
-    assert await axil_read(dut, 0x000) == 0x4D4C_0208
+    assert await axil_read(dut, 0x000) == 0x4D4C_0308                # map version 3, 8 channels
     assert await axil_read(dut, 0x048) == 12
     assert await axil_read(dut, 0x054) == 4166 << 16
     assert await axil_read(dut, 0x0F0) == 0x0BAD_0BAD
@@ -107,17 +107,20 @@ async def registers_and_pulses(dut):
 @cocotb.test()
 async def memories(dut):
     await setup(dut)
-    await axil_write(dut, 0x10C, 0x1234_5678)                 # gain[3]
-    await axil_write(dut, 0x124, 0x0000_0042)                 # offset[1]
+    await axil_write(dut, 0x90C, 0x1234_5678)                 # gain[3]
+    await axil_write(dut, 0xA04, 0x0000_0042)                 # offset[1]
+    await axil_write(dut, 0x9FC, 0x0000_0063)                 # gain[63]: the RAMs hold 64 words
     dut.dsp_gain_ch.value, dut.dsp_trim_ch.value = 3, 5
     await ClockCycles(dut.clk_dsp, 2)
     assert int(dut.dsp_gain.value) == 0x1234_5678
-    assert int(dut.dsp_trim.value) == 0x4000_0000              # unity8.mem
+    assert int(dut.dsp_trim.value) == 0x4000_0000              # unity64.mem
     dut.dsp_gain_ch.value = 1
     await ClockCycles(dut.clk_dsp, 2)
     assert int(dut.dsp_offset.value) == 0x42
-    assert await axil_read(dut, 0x10C) == 0x1234_5678
-    assert await axil_read(dut, 0x124) == 0x42
+    assert await axil_read(dut, 0x90C) == 0x1234_5678
+    assert await axil_read(dut, 0xA04) == 0x42
+    assert await axil_read(dut, 0x9FC) == 0x63
+    assert await axil_read(dut, 0xB00) == 0x4000_0000            # trim[0]
 
     first_tap = int((ROOT / "coeff" / "fir64.mem").read_text().split()[0], 16)
     assert await axil_read(dut, 0x200) == first_tap
@@ -166,8 +169,10 @@ async def status_and_irq(dut):
     await ClockCycles(dut.clk_spi, 3)
     dut.spi_seq_busy.value = 0                                 # sequencer done
     await ClockCycles(dut.clk_spi, 3)
-    assert await axil_read(dut, 0x068) == 0b10101
-    assert await axil_read(dut, 0x81C) == 0xA5A5_0007
+    assert await axil_read(dut, 0xC08) == 0b10101                # FAULT[2]
+    assert await axil_read(dut, 0x81C) == 0xA5A5_0007            # SEQ_RESP[7]
+    assert await axil_read(dut, 0x820) == 0x0BAD_0BAD            # SEQ_RESP[8]: past N_CH
+    assert await axil_read(dut, 0xC20) == 0x0BAD_0BAD            # FAULT[8]
     assert await axil_read(dut, 0x008) == 0b001001             # overload, MMCM locked
     assert await axil_read(dut, 0x00C) == (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5)
 
@@ -175,7 +180,7 @@ async def status_and_irq(dut):
 def test_mclp_registers():
     from runner import run
     run("mclp_registers", ["rtl/mclp_registers.sv", "rtl/axil_bram_ctrl.sv", "tb/common/xpm_models.sv"], __file__,
-        files=["coeff/fir64.mem", "coeff/seq_init.mem", "coeff/unity8.mem"])
+        files=["coeff/fir64.mem", "coeff/seq_init.mem", "coeff/unity64.mem"])
 
 
 if __name__ == "__main__":

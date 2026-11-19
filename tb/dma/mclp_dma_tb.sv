@@ -133,7 +133,7 @@ module mclp_dma_tb;
 		`PS.fpga_soft_reset(32'h0);
 		#3_000_000;
 		rd(REGS, v);
-		check(v == 32'h4D4C_0208, "ID register over M_AXI_GP0");
+		check(v == 32'h4D4C_0308, "ID register over M_AXI_GP0");
 		for (int k = 0; k < 8; k++) begin
 			rd(SEQRESP + 4 * k, v);
 			check(v[3:0] == 4'h4, $sformatf("AD7190 %0d ID", k));
@@ -185,10 +185,10 @@ module mclp_dma_tb;
 		wr(CTRL, EN);
 		#1_000_000;
 
-		// ---- descriptors: Cmplt, RXSOF, RXEOF, 40 bytes; nothing after the last record
+		// ---- descriptors: Cmplt, RXSOF, RXEOF, 48 bytes; nothing after the last record
 		for (int i = 0; i < N_REC; i++) begin
 			mem_rd(bd(i) + 28, st);
-			check(st == 32'h8C00_0028, $sformatf("descriptor %0d status 0x%08X (Cmplt, SOF, EOF, 40 bytes)", i, st));
+			check(st == 32'h8C00_0030, $sformatf("descriptor %0d status 0x%08X (Cmplt, SOF, EOF, 48 bytes)", i, st));
 		end
 		mem_rd(bd(N_REC) + 28, st);
 		check(st == 0, "one-shot stopped: descriptor after the last record untouched");
@@ -200,12 +200,14 @@ module mclp_dma_tb;
 				$display("note: VIP DDR model holds 0x%08X for descriptor %0d's status, HP0 wrote 0x%08X", d[31:0], i, st);
 		end
 
-		// ---- records (record_get): {ts, tap, faults}, then s1:s0 .. s7:s6, little endian
+		// ---- records (record_get): {ts, tap, 0}, then s1:s0 .. s7:s6, then the fault word, little endian
 		for (int i = 0; i < N_REC; i++) begin
 			mem_rd(buf_(i), w0);
 			mem_rd(buf_(i) + 4, w1);
 			ts = {w1, w0[31:16]};
-			check(w0[15:14] == 2'd0 && w0[7:0] == 0, $sformatf("record %0d header: tap 0, no faults", i));
+			mem_rd(buf_(i) + 40, v);
+			mem_rd(buf_(i) + 44, st);
+			check(w0[15:0] == 0 && v == 0 && st == 0, $sformatf("record %0d header: tap 0; fault word: none", i));
 			for (int k = 0; k < 8; k++) begin
 				mem_rd(buf_(i) + 8 + 4 * k, v);
 				check($signed(v) == sample[k], $sformatf("record %0d channel %0d = %0d", i, k, $signed(v)));
@@ -214,7 +216,7 @@ module mclp_dma_tb;
 				check(ts - ts_prev >= 4165 && ts - ts_prev <= 4168,
 				      $sformatf("record %0d timestamp step %0d clk_spi ticks", i, ts - ts_prev));
 			ts_prev = ts;
-			for (int b = 40; b < 64; b += 4) begin
+			for (int b = 48; b < 64; b += 4) begin
 				mem_rd(buf_(i) + b, v);
 				if (v != FILL) check(0, $sformatf("record %0d: byte %0d written past the record", i, b));
 			end
