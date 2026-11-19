@@ -12,7 +12,7 @@
 #define FIR_TAPS          64
 #define SEQ_WORDS         256
 #define CIC_RATE_HZ       600.0         /* 4800 SPS / 8 */
-#define FPGA_ID           0x4D4C0108u   /* "ML" (MCLP), register map version 1, 8 channels */
+#define FPGA_ID           0x4D4C0208u   /* "ML" (MCLP), register map version 2, 8 channels */
 
 /* Registers (byte offsets from MCLP_BASE) */
 #define REG_ID            0x000u

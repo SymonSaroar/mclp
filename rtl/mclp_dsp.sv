@@ -225,9 +225,11 @@ module mclp_dsp (
 	);
 
 	/////////////////////////////////////////////////////////////////////////////
-	// Weight: FIR output >> 20 (taps sum to 2^20), clipped to 32 bits
+	// Weight: FIR output >> 23, clipped to 32 bits. The taps sum to 2^20, so the DC gain is 1/8: eight
+	// channels at full scale and unity gain (8 x 2^31) fit 32 bits, and only a channel that clipped in
+	// ch_scale (OVERLOAD) or FIR overshoot on a full-scale step can clip the weight.
 	/////////////////////////////////////////////////////////////////////////////
-	wire signed [39:0] y40    = fir_data[59:20];
+	wire signed [39:0] y40    = fir_data[62:23];
 	wire signed [31:0] weight = (y40 > W_MAX) ? W_MAX[31:0] : (y40 < W_MIN) ? W_MIN[31:0] : y40[31:0];
 
 	stability_detect stability_detect_0 (

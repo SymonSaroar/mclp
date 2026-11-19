@@ -25,7 +25,7 @@ void cal_defaults(cal_t *c)
 	c->magic   = CAL_MAGIC;
 	c->version = CAL_VERSION;
 	for (int ch = 0; ch < CAL_CH; ch++) {
-		c->gain[ch] = q30(GAIN_DEFAULT);
+		c->gain[ch] = q30(1.0);
 		c->trim[ch] = q30(1.0);
 	}
 	c->stab_band  = 4096;

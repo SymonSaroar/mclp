@@ -135,7 +135,7 @@ module mclp_registers #(
 	localparam [11:0] MEM_FIR     = 12'h200;   // 0x200-0x2FC, 64 words, reload order
 	localparam [11:0] MEM_SEQ     = 12'h400;   // 0x400-0x7FC, 256 words
 	//---------------------------------------------------------------------------------------------------
-	localparam [31:0] FPGA_ID     = 32'h4D4C_0108;   // "ML" (MCLP), register map version 1, 8 channels
+	localparam [31:0] FPGA_ID     = 32'h4D4C_0208;   // "ML" (MCLP), register map version 2, 8 channels
 	localparam [31:0] READ_BAD    = 32'h0BAD_0BAD;
 
 	localparam [2:0] SEL_REG    = 3'd0;

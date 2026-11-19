@@ -79,7 +79,7 @@ async def count_pulses(clk, sig, cycles, out):
 @cocotb.test()
 async def registers_and_pulses(dut):
     await setup(dut)
-    assert await axil_read(dut, 0x000) == 0x4D4C_0108
+    assert await axil_read(dut, 0x000) == 0x4D4C_0208
     assert await axil_read(dut, 0x048) == 12
     assert await axil_read(dut, 0x054) == 4166 << 16
     assert await axil_read(dut, 0x0F0) == 0x0BAD_0BAD

@@ -464,7 +464,7 @@ static void cmd_cal(int argc, char **argv)
 		have_baseline = 0;
 		memset(pos_have, 0, sizeof pos_have);
 		cal_apply();
-		printf("calibration reset: offsets 0, gains %.3f, trims 1, no span\n", GAIN_DEFAULT);
+		printf("calibration reset: offsets 0, gains 1, trims 1, no span\n");
 	} else if (!strcmp(sub, "save")) {
 		cal.sum = cal_checksum(&cal);
 		int e = hw->store(&cal, sizeof cal);

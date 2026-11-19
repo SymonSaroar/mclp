@@ -10,8 +10,7 @@
 #define CAL_CH       8
 #define CAL_TAPS     64
 #define CAL_MAGIC    0x4C414357u   /* "WCAL" */
-#define CAL_VERSION  2u            /* layout of cal_t; a record of another version is not loaded */
-#define GAIN_DEFAULT 0.125         /* RESULT headroom: full scale on all 8 channels fits 32 bits */
+#define CAL_VERSION  3u            /* layout of cal_t; a record of another version is not loaded */
 
 typedef struct {
 	uint32_t magic, version;

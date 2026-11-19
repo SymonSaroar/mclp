@@ -46,7 +46,7 @@ def scenario():
             h, staged = staged, None
         ev.append(("C",))
 
-    assert sum(h) == 2**20                          # unity DC gain after mclp_dsp's >> 20
+    assert sum(h) == 2**20                          # DC gain 1/8 after mclp_dsp's >> 23
     d(1)
     for _ in range(N + 4):
         d(0)

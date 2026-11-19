@@ -106,7 +106,7 @@ module mclp_top_tb;
 		// ---- init list, ID: reset 0.6 ms, zero-scale calibration 4 conversions (0.83 ms), then streaming
 		ms(3);
 		rd(12'h000, v);
-		check(v == 32'h4D4C_0108, "ID register");
+		check(v == 32'h4D4C_0208, "ID register");
 		rd(STATUS, v);
 		check(v[0] && !v[1], "MMCM locked, init list finished");
 		for (int k = 0; k < 8; k++) begin
@@ -151,7 +151,7 @@ module mclp_top_tb;
 		// ---- static weight: FIR settles (64 x 1.67 ms), then stable after 10 samples
 		wr(IRQ_EN, 1);
 		ms(130);
-		expect_w = 256 * sum_x();
+		expect_w = 32 * sum_x();                      // 256 x code, FIR DC gain 1/8
 		rd(RESULT, v);
 		check($signed(v) == expect_w, $sformatf("RESULT %0d, expected %0d", $signed(v), expect_w));
 		rd(STATUS, v);
@@ -219,8 +219,8 @@ module mclp_top_tb;
 		run_prog(10, EN);
 		ms(3);
 
-		// ---- FIR reload: one tap of 2^16 at RAM word 0, so the weight is X/16 delayed by the position
-		// that word 0 takes in the filter. mclp_fir reloads in coefficient order, so word 0 must act
+		// ---- FIR reload: one tap of 2^16 at RAM word 0, so the weight is 2 X (256 X 2^16 >> 23) delayed by
+		// the position that word 0 takes in the filter. mclp_fir reloads in coefficient order, so word 0 must act
 		// on the newest sample; a load step shows the delay in FIR outputs.
 		for (int i = 0; i < 64; i++) wr(FIRMEM + 4 * i, i == 0 ? 32'd65536 : 32'd0);
 		wr(DECIM, 1);
@@ -229,7 +229,7 @@ module mclp_top_tb;
 		do rd(STATUS, v); while (v[2]);
 		ms(5);
 		rd(RESULT, r0);
-		check($signed(r0) == 16 * sum_x(), $sformatf("single-tap FIR gives X/16 (%0d)", $signed(r0)));
+		check($signed(r0) == 2 * sum_x(), $sformatf("single-tap FIR gives 2 X (%0d)", $signed(r0)));
 		rd(RESULT_SEQ, seq0);
 		for (int k = 0; k < 8; k++) sample[k] += 100_000;
 		d = -1;
@@ -245,7 +245,7 @@ module mclp_top_tb;
 		check(d >= 0 && d <= 6, "RAM word 0 is FIR coefficient 0");
 		ms(10);
 		rd(RESULT, r);
-		check($signed(r) == 16 * sum_x(), "single-tap FIR settles on the new load");
+		check($signed(r) == 2 * sum_x(), "single-tap FIR settles on the new load");
 
 		$display("SYSTEM TEST %s, %0d errors", errors == 0 ? "PASSED" : "FAILED", errors);
 		$finish;
