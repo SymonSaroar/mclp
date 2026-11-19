@@ -1,0 +1,195 @@
+{
+  "jobs": [
+    {
+      "id": "c6840c21-7d49-5eec-8d0b-ddcae894f793",
+      "type": "sch_erc",
+      "description": "ERC",
+      "settings": {
+        "output_filename": "mclp_adc-erc.rpt",
+        "format": "report",
+        "units": "mm",
+        "fail_on_error": true
+      }
+    },
+    {
+      "id": "f6b0aaa7-abc0-5fbb-a90e-3a919cb09528",
+      "type": "pcb_drc",
+      "description": "DRC",
+      "settings": {
+        "output_filename": "mclp_adc-drc.rpt",
+        "format": "report",
+        "units": "mm",
+        "parity": true,
+        "refill_zones": true,
+        "save_board": false,
+        "report_all_track_errors": false,
+        "fail_on_error": true
+      }
+    },
+    {
+      "id": "8121dc89-2080-5dde-9991-20eff6e58a9f",
+      "type": "pcb_export_gerbers",
+      "description": "Gerbers",
+      "settings": {
+        "output_dir": "",
+        "layers": [
+          "F.Cu",
+          "In1.Cu",
+          "In2.Cu",
+          "B.Cu",
+          "F.Paste",
+          "B.Paste",
+          "F.SilkS",
+          "B.SilkS",
+          "F.Mask",
+          "B.Mask",
+          "Edge.Cuts"
+        ],
+        "layers_to_include_on_all_layers": [],
+        "plot_footprint_values": false,
+        "plot_ref_des": true,
+        "plot_drawing_sheet": false,
+        "subtract_solder_mask_from_silk": true,
+        "use_drill_origin": false,
+        "use_protel_file_extension": true,
+        "use_x2_format": false,
+        "include_netlist_attributes": false,
+        "disable_aperture_macros": false,
+        "precision": 6,
+        "create_gerber_job_file": false
+      }
+    },
+    {
+      "id": "35e8ca00-997c-5c77-9d02-fb93275c492e",
+      "type": "pcb_export_drill",
+      "description": "Drill files",
+      "settings": {
+        "output_dir": "",
+        "format": "excellon",
+        "drill_origin": "abs",
+        "units": "mm",
+        "zero_format": "decimal",
+        "excellon.mirror_y": false,
+        "excellon.minimal_header": false,
+        "excellon.combine_pth_npth": false,
+        "excellon.oval_drill_route": false,
+        "generate_map": false,
+        "generate_tenting": false,
+        "generate_report": false
+      }
+    },
+    {
+      "id": "791ac015-def7-584d-8015-8a4fe21115c4",
+      "type": "pcb_export_pos",
+      "description": "Position file",
+      "settings": {
+        "output_filename": "mclp_adc.csv",
+        "format": "csv",
+        "units": "mm",
+        "side": "both",
+        "single_file": true,
+        "use_drill_place_file_origin": false,
+        "exclude_footprints_with_th": false,
+        "exclude_dnp": true,
+        "exclude_bom": true,
+        "negate_bottom_x": false
+      }
+    },
+    {
+      "id": "40e687c6-f0c0-5939-9ccc-01a68db91d8c",
+      "type": "sch_export_bom",
+      "description": "Bill of materials",
+      "settings": {
+        "output_filename": "mclp_adc-bom.csv",
+        "fields_ordered": [
+          "${QUANTITY}",
+          "Value",
+          "Footprint",
+          "MPN",
+          "Reference"
+        ],
+        "fields_labels": [
+          "Qty",
+          "Value",
+          "Footprint",
+          "MPN",
+          "References"
+        ],
+        "fields_group_by": [
+          "Value",
+          "Footprint",
+          "MPN"
+        ],
+        "sort_field": "Reference",
+        "sort_asc": true,
+        "field_delimiter": ",",
+        "string_delimiter": "\"",
+        "ref_delimiter": ",",
+        "ref_range_delimiter": "",
+        "keep_tabs": false,
+        "keep_line_breaks": false,
+        "filter_string": "",
+        "exclude_dnp": true,
+        "group_symbols": true,
+        "bom_preset_name": "",
+        "bom_format_preset_name": ""
+      }
+    },
+    {
+      "id": "5ff3398b-d8fc-515c-95fa-ef1791f20d31",
+      "type": "sch_export_plot_pdf",
+      "description": "Schematic PDF",
+      "settings": {
+        "output_filename": "mclp_adc-schematic.pdf",
+        "plot_drawing_sheet": true,
+        "black_and_white": false,
+        "use_background_color": false,
+        "pdf_hierarchical_links": true,
+        "pdf_property_popups": true
+      }
+    }
+  ],
+  "meta": {
+    "version": 1
+  },
+  "outputs": [
+    {
+      "id": "8657bcdd-1dac-5737-a101-1198afbbfbd0",
+      "type": "folder",
+      "description": "Checks",
+      "only": [
+        "c6840c21-7d49-5eec-8d0b-ddcae894f793",
+        "f6b0aaa7-abc0-5fbb-a90e-3a919cb09528"
+      ],
+      "settings": {
+        "output_path": "../../build/kicad/checks"
+      }
+    },
+    {
+      "id": "d1dfd408-49e1-5f68-ae29-847a850910ed",
+      "type": "archive",
+      "description": "Board fabrication",
+      "only": [
+        "8121dc89-2080-5dde-9991-20eff6e58a9f",
+        "35e8ca00-997c-5c77-9d02-fb93275c492e"
+      ],
+      "settings": {
+        "output_path": "fab/mclp_adc-gerbers.zip",
+        "format": "zip"
+      }
+    },
+    {
+      "id": "38d31af4-8833-5b45-8af7-d58e9e585581",
+      "type": "folder",
+      "description": "Assembly and documentation",
+      "only": [
+        "791ac015-def7-584d-8015-8a4fe21115c4",
+        "40e687c6-f0c0-5939-9ccc-01a68db91d8c",
+        "5ff3398b-d8fc-515c-95fa-ef1791f20d31"
+      ],
+      "settings": {
+        "output_path": "fab"
+      }
+    }
+  ]
+}

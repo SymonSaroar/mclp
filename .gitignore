@@ -19,3 +19,4 @@ sw/linux/project-spec/configs/.statistics
 fp-info-cache
 _autosave-*
 .history/
+~*.lck
