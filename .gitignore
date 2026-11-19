@@ -20,3 +20,5 @@ fp-info-cache
 _autosave-*
 .history/
 ~*.lck
+# Vendor data sheets and user guides
+/docs/*.pdf
