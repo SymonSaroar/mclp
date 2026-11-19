@@ -1,9 +1,9 @@
-M_AXI_REGS:
-- M_AXI_REGS
-- None
 axi_dma:
 - axi_dma
 - axidma
+mclp_core_0:
+- mclp_core
+- None
 ps7_afi_0:
 - ps7_afi
 - None

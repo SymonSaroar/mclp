@@ -1018,13 +1018,6 @@
 		ps7_qspi_linear_0: ps7_qspi_linear@fc000000 {
 			reg = <0xfc000000 0x1000000>;
 		};
-		M_AXI_REGS: M_AXI_REGS@43c00000 {
-			status = "okay";
-			compatible = "M_AXI_REGS";
-			xlnx,ip-name = "M_AXI_REGS";
-			reg = <0x43c00000 0x10000>;
-			xlnx,name = "M_AXI_REGS";
-		};
 	};
 	&uart1 {
 		status = "okay";

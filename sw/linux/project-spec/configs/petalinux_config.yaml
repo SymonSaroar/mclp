@@ -3,7 +3,7 @@ processor:
     ps7_cortexa9_0:
         arch: aarch64
         ip_name: ps7_cortexa9
-        slaves_strings: adc can0 gpio0 i2c0 intc L2 mc uart1 qspi gem0 sdhci0 slcr dmac_s devcfg global_timer ttc0 scutimer scuwdt usb0 coresight ps7_pmu_0 ps7_ocmc_0 ps7_gpv_0 ps7_scuc_0 ps7_iop_bus_config_0 ps7_dma_ns ps7_afi_0 ps7_afi_1 ps7_afi_2 ps7_afi_3 M_AXI_REGS axi_dma
+        slaves_strings: adc can0 gpio0 i2c0 intc L2 mc uart1 qspi gem0 sdhci0 slcr dmac_s devcfg global_timer ttc0 scutimer scuwdt usb0 coresight ps7_pmu_0 ps7_ocmc_0 ps7_gpv_0 ps7_scuc_0 ps7_iop_bus_config_0 ps7_dma_ns ps7_afi_0 ps7_afi_1 ps7_afi_2 ps7_afi_3 axi_dma mclp_core_0
         slaves:
             ps7_qspi_linear_0:
                 device_type: linear_flash
@@ -89,7 +89,7 @@ processor:
                 ip_name: ps7_afi
             ps7_afi_3:
                 ip_name: ps7_afi
-            M_AXI_REGS:
-                ip_name: M_AXI_REGS
             axi_dma:
                 ip_name: axi_dma
+            mclp_core_0:
+                ip_name: mclp_core

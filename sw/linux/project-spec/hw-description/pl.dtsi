@@ -21,6 +21,16 @@
 			#size-cells = <0>;
 			xlnx,afi-width = <0>;
 		};
+		misc_clk_1: misc_clk_1 {
+			compatible = "fixed-clock";
+			clock-frequency = <20000000>;
+			#clock-cells = <0>;
+		};
+		misc_clk_0: misc_clk_0 {
+			compatible = "fixed-clock";
+			clock-frequency = <50000000>;
+			#clock-cells = <0>;
+		};
 		axi_dma: dma@40400000 {
 			interrupts = < 0 29 4 >;
 			compatible = "xlnx,axi-dma-7.1" , "xlnx,axi-dma-1.00.a";
@@ -69,6 +79,20 @@
 				compatible = "xlnx,axi-dma-s2mm-channel";
 				dma-channels = <0x1>;
 			};
+		};
+		mclp_core_0: mclp_core@43c00000 {
+			compatible = "xlnx,mclp-core-1.0";
+			interrupts = < 0 30 4 >;
+			xlnx,n-ch = <8>;
+			interrupt-parent = <&intc>;
+			xlnx,ip-name = "mclp_core";
+			reg = <0x43c00000 0x10000>;
+			clocks = <&clkc 15>, <&misc_clk_0>, <&misc_clk_1>;
+			xlnx,edk-iptype = "PERIPHERAL";
+			status = "okay";
+			clock-names = "aclk" , "clk_dsp" , "clk_spi";
+			interrupt-names = "irq";
+			xlnx,name = "mclp_core_0";
 		};
 	};
 };
