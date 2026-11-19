@@ -5,7 +5,7 @@ that plugs into FMC1 (J3) of the ZC702. This folder holds the design: this speci
 schematic and board, and the files a board house needs to make and assemble it.
 
 State: schematic and 4-layer layout in KiCad 10, schematic checked against the FPGA pin constraints and the
-AD7190 pin table. Nothing has been built.
+AD7190 pin table. A reference for the MCLP IP: nothing has been built or tested on hardware.
 
 ## Files
 
@@ -60,10 +60,10 @@ AD7190 pin table. Nothing has been built.
 - Connector J1: Samtec FMC LPC mezzanine connector, footprint `Connector_Samtec:Samtec_FMC_ASP-134604-01_4x40_Vertical`
   in KiCad 10. ZC702 users report mating J3 with the ASP-134604 series; listings disagree on its gender and
   the suffix sets the stack height (10 mm clears the ZC702's parts near J3). Check the Samtec drawing against
-  the ZC702's J3 part before ordering.
+  the ZC702's J3 part before building the card.
 - The card is 184 × 100 mm, larger than the VITA 57.1 single-width outline: J1 on the left edge, four
   7-pin terminal blocks (24.5 mm each at 3.5 mm pitch) on the top edge and four on the bottom edge. Check the
-  outline against the ZC702 around J3 (mounting holes, heat sink, other connectors) before ordering.
+  outline against the ZC702 around J3 (mounting holes, heat sink, other connectors) before building the card.
 - Mount the card with the FMC standoffs; the terminal blocks take cable force, so add a support standoff near
   the front edge.
 
@@ -213,19 +213,14 @@ cd hw/adc-card
 kicad-cli jobset run --stop-on-error --file mclp_adc.kicad_jobset mclp_adc.kicad_pro
 ```
 
-### Ordering at JLCPCB
+### Assembly notes
 
-- Board: upload `fab/mclp_adc-gerbers.zip` and choose the options above. JLCPCB prints its order number on
-  the board. To choose where, put the text `JLCJLCJLCJLC` on the silkscreen and select "specify position".
-- Assembly: `fab/mclp_adc-bom.csv` and `fab/mclp_adc-all-pos.csv`. If the upload asks for column names:
-  Ref is the designator, PosX and PosY are Mid X and Mid Y, Rot is the rotation, Side is the layer. Check
-  each part's rotation in JLCPCB's placement preview, because some packages have a different zero angle in
-  KiCad.
-- Every part needs an LCSC part number (see open items). Check stock for the AD7190, the ADP7118 and J1.
-- J1 is the only part on the bottom side, and its 160 contacts sit under the body where an iron cannot reach.
-  Supply it to the assembler, or have it reflowed separately.
+- J1 is the only part on the bottom side, and its 160 contacts sit under the body where an iron cannot reach:
+  it needs reflow.
 - The position file leaves out what is not placed: fiducials, mounting holes, solder jumpers, the net tie
   and the test points. TP6, TP55 and TP56 take a wire loop, soldered by hand.
+- Some packages have a different zero angle in KiCad than in an assembler's library; check part rotations
+  against the position file.
 
 ## Open items
 
@@ -235,12 +230,11 @@ kicad-cli jobset run --stop-on-error --file mclp_adc.kicad_jobset mclp_adc.kicad
 - FRU EEPROM contents: VITA 57.1 expects FRU data; the ZC702 runs without it (VADJ is set by hand).
 - Buck at light load: whether the TPS54202 skips pulses at about 170 mA, and how much of the 22 µF output
   capacitance remains at 6 V DC bias; check against TI's data sheet.
-- SCLK, DIN, CS and SYNC: one buffer output drives four converters; measure SCLK at the farthest converter on
-  the first board (fallback: a third 74AHC244 for point-to-point clocks).
-- LCSC part numbers for assembly at JLCPCB.
+- SCLK, DIN, CS and SYNC: one buffer output drives four converters; SCLK at the farthest converter is not
+  measured (fallback: a third 74AHC244 for point-to-point clocks).
 - ADP7118 fixed-5.0 V ordering code; Abracon ASE ordering code for 4.9152 MHz.
 - Inductor: the SRN6045TA footprint is a placeholder; any shielded 22 µH part with 1 A or more saturation
   current fits.
-- Buck loop stability at the chosen inductor and capacitors: check on the first board.
+- Buck loop stability at the chosen inductor and capacitors: not checked on hardware.
 - Polyfuse hold current against the cells used (one 350 Ω cell draws 14.3 mA; the LDO limits near 200 mA
   for all eight together).
