@@ -7,11 +7,13 @@
 #   vivado -mode batch -source tcl/mclp.tcl -tclargs --project_name mclp_dma --sim dma --simulate
 #
 # Everything under build/ is generated and can be deleted at any time.
-# Sources are picked up by glob: rtl/, xdc/, coeff/*.mem, tb/system/ or tb/dma/ (sim only), tcl/*_bd.tcl.
-# AMD IP outside the block design comes from tcl/ip.tcl.
-# --sim system (default): the system test, with stand-ins for the block design and the MMCM.
-# --sim dma: the DMA test, with the real block design (PS7 as the Zynq-7000 VIP, AXI DMA, SmartConnects);
-#   give it its own --project_name, since it keeps the block design in simulation.
+# mclp_core (rtl/, coeff/*.mem) is packaged as IP first (tcl/package_ip.tcl, into <build_dir>/ip_repo); the
+# block design (tcl/*_bd.tcl) instantiates it, and its wrapper is the top. xdc/ holds the pins and timing.
+# --sim system (default): the system test; tb/system/mclp_top_wrapper_stub.sv stands in for the block
+#   design (PS, MMCM) around the mclp_core RTL.
+# --sim dma: the DMA test, with the real block design (PS7 as the Zynq-7000 VIP, AXI DMA, SmartConnects,
+#   clocking wizard, the packaged core); give it its own --project_name, since it keeps the block design
+#   in simulation.
 
 # ==============================================================================
 # CONFIGURATION
@@ -22,7 +24,7 @@ set proj_name    "mclp"
 set build_dir    "$origin_dir/build"
 set part         "xc7z020clg484-1"
 set board_part   "xilinx.com:zc702:part0:1.4"
-set top_module   "mclp_top"
+set top_module   "mclp_top_wrapper"
 set sim          "system"
 set simulate     0
 
@@ -54,6 +56,8 @@ if {![string match "2025.1*" [version -short]]} {
 	puts "WARNING: BD scripts were generated with Vivado 2025.1, running [version -short]"
 }
 
+source $origin_dir/tcl/package_ip.tcl
+
 # ==============================================================================
 # PROJECT
 # ==============================================================================
@@ -64,6 +68,8 @@ create_project $proj_name $proj_dir -part $part -force
 set_property board_part $board_part [current_project]
 set_property default_lib xil_defaultlib [current_project]
 set_property simulator_language Mixed [current_project]
+set_property ip_repo_paths [list "$build_dir/ip_repo"] [current_project]
+update_ip_catalog -rebuild
 
 # ==============================================================================
 # SOURCES
@@ -74,26 +80,20 @@ proc src {pattern} { glob -nocomplain -directory $::origin_dir {*}$pattern }
 set rtl [src {rtl/*.v rtl/*.sv rtl/*.vhd rtl/*.vhdl}]
 set xdc [src {xdc/*.xdc}]
 set mem [src {coeff/*.mem}]
+# Synthesis takes mclp_core from the packaged IP; the system test compiles the RTL itself. The RAM images go
+# to sim_1 so the simulator finds them in its run directory.
 if {$sim eq "system"} {
-	set tb     [src {tb/system/*.v tb/system/*.sv}]
+	set tb     [concat $rtl [src {tb/system/*.v tb/system/*.sv}]]
 	set tb_top mclp_top_tb
 } else {
-	set tb     [concat [src {tb/system/ad7190_model.sv tb/system/clk_wiz_0_stub.sv}] [src {tb/dma/*.sv}]]
+	set tb     [concat [src {tb/system/ad7190_model.sv}] [src {tb/dma/*.sv}]]
 	set tb_top mclp_dma_tb
 }
 
-if {[llength $rtl]} { add_files -norecurse -fileset sources_1 $rtl }
 if {[llength $xdc]} { add_files -norecurse -fileset constrs_1 $xdc }
-if {[llength $mem]} { add_files -norecurse -fileset sources_1 $mem }
 if {[llength $tb]}  { add_files -norecurse -fileset sim_1 $tb }
-puts "Added [llength $rtl] rtl, [llength $xdc] xdc, [llength $mem] mem, [llength $tb] tb files"
-
-source $origin_dir/tcl/ip.tcl
-# tb/system/clk_wiz_0_stub.sv stands in for the MMCM in simulation: the core's model toggles a 1 GHz VCO,
-# too slow for the system test
-foreach ip {clk_wiz_0} {
-	set_property used_in_simulation false [get_files -norecurse $ip.xci]
-}
+if {[llength $mem]} { add_files -norecurse -fileset sim_1 $mem }
+puts "Added [llength $xdc] xdc, [llength $tb] tb, [llength $mem] mem files"
 
 # ==============================================================================
 # BLOCK DESIGNS  (tcl/*_bd.tcl, written by: write_bd_tcl -force tcl/<name>_bd.tcl)
@@ -108,7 +108,7 @@ foreach bd_script [lsort [src {tcl/*_bd.tcl}]] {
 	close_bd_design $bd
 	set wrapper [make_wrapper -files $bd_file -top]
 	add_files -norecurse -fileset sources_1 $wrapper
-	# system test: tb/system/zynq_ps_wrapper_stub.sv stands in for the block design in simulation
+	# system test: tb/system/mclp_top_wrapper_stub.sv stands in for the block design in simulation
 	if {$sim eq "system"} {
 		set_property used_in_simulation false $bd_file
 		set_property used_in_simulation false [get_files -norecurse $wrapper]

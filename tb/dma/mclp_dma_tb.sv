@@ -1,13 +1,14 @@
-// DMA path test for xsim: mclp_top with the real block design. The PS7 simulates as AMD's Zynq-7000 VIP
-// (register access over M_AXI_GP0, DDR model behind S_AXI_HP0); the AXI DMA and both SmartConnects are
-// the real IP. Only the MMCM is the stand-in from tb/system. 8 AD7190 models as in the system test.
+// DMA path test for xsim: the real reference block design (mclp_top_wrapper). The PS7 simulates as AMD's
+// Zynq-7000 VIP (register access over M_AXI_GP0, DDR model behind S_AXI_HP0); the AXI DMA, both
+// SmartConnects, the clocking wizard and mclp_core (the packaged IP) are the real thing. 8 AD7190 models
+// as in the system test.
 // The test does what capture() in sw/common/mclp_ops.c does: reset the S2MM channel, build the cyclic
 // descriptor ring in DDR, one-shot of N_REC records at tap 0, poll the descriptors' Cmplt bits; then it
 // checks every record against the samples the models sent. DDR contents are read from what crossed the
 // S_AXI_HP0 pins (see ddr below). About 8 ms of simulated time.
 // Created by: vivado -mode batch -source tcl/mclp.tcl -tclargs --sim dma ...
 `timescale 1ns / 1ps
-`define PS dut.zynq_ps_wrapper_0.zynq_ps_i.processing_system7_0.inst
+`define PS dut.mclp_top_i.processing_system7_0.inst
 module mclp_dma_tb;
 	localparam [31:0] REGS = 32'h43C0_0000, DMA = 32'h4040_0000;
 	localparam [31:0] CTRL = REGS + 12'h004, IRQ_ST = REGS + 12'h00C, TRIG_CFG = REGS + 12'h04C,
@@ -30,7 +31,7 @@ module mclp_dma_tb;
 	reg signed [23:0] sample [0:7];
 	integer     errors = 0;
 
-	mclp_top dut (
+	mclp_top_wrapper dut (
 		.FIXED_IO_ps_clk(ps_clk), .FIXED_IO_ps_porb(ps_rstn), .FIXED_IO_ps_srstb(ps_rstn),
 		.adc_sclk(sclk), .adc_din(din), .adc_cs_n(cs_n), .adc_sync_n(sync_n), .adc_dout(dout)
 	);

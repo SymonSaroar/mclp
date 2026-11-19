@@ -1,6 +1,6 @@
 /*
  * Register map of rtl/mclp_registers.sv and the AXI DMA used for raw capture.
- * Addresses come from the address map in tcl/zynq_ps_bd.tcl. Keep this file in step with the RTL.
+ * Addresses come from the address map in tcl/mclp_top_bd.tcl. Keep this file in step with the RTL.
  */
 #ifndef MCLP_REGS_H
 #define MCLP_REGS_H

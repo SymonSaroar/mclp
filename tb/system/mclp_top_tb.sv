@@ -1,5 +1,5 @@
-// System test of mclp_top for xsim. The PS block design, the MMCM and the CIC and FIR cores are replaced
-// by the *_stub.sv models in this folder; N_CH AD7190 models run at the nominal 4.9152 MHz MCLK (4800 SPS).
+// System test of mclp_core inside mclp_top_wrapper_stub.sv, the stand-in for the reference block design (PS
+// clock and AXI4-Lite master, ideal MMCM, raw record sink); N_CH AD7190 models run at the nominal 4.9152 MHz MCLK (4800 SPS).
 // About 180 ms of simulated time. N_CH (default 8, the reference design) is set with iverilog -P.
 // Scenarios: init list and ID; raw capture at tap 0 (bit-exact); gain and trim at tap 3 (bit-exact);
 // static weight, stability and the result interrupt; overload; loopback BIST with ERR injection;
@@ -29,7 +29,7 @@ module mclp_top_tb #(
 	reg   [31:0] init_list [0:23];
 	integer     errors = 0;
 
-	mclp_top #(.N_CH(N_CH)) dut (.adc_sclk(sclk), .adc_din(din), .adc_cs_n(cs_n), .adc_sync_n(sync_n), .adc_dout(dout));
+	mclp_top_wrapper #(.N_CH(N_CH)) dut (.adc_sclk(sclk), .adc_din(din), .adc_cs_n(cs_n), .adc_sync_n(sync_n), .adc_dout(dout));
 
 	for (genvar k = 0; k < N_CH; k++) begin : g_adc
 		ad7190_model u_adc (
@@ -39,11 +39,11 @@ module mclp_top_tb #(
 	end
 
 	task automatic wr(input [11:0] a, input [31:0] d);
-		dut.zynq_ps_wrapper_0.write32({20'h43C00, a}, d);
+		dut.write32({20'h43C00, a}, d);
 	endtask
 
 	task automatic rd(input [11:0] a, output [31:0] d);
-		dut.zynq_ps_wrapper_0.read32({20'h43C00, a}, d);
+		dut.read32({20'h43C00, a}, d);
 	endtask
 
 	task automatic check(input bit ok, input string what);
@@ -71,19 +71,19 @@ module mclp_top_tb #(
 
 	// index of the header of the first complete record whose words start at or after `from`
 	function automatic integer record_after(input integer from);
-		for (int i = from + REC - 1; i < dut.zynq_ps_wrapper_0.raw_n; i++)
-			if (dut.zynq_ps_wrapper_0.raw_last[i]) return i - (REC - 1);
+		for (int i = from + REC - 1; i < dut.raw_n; i++)
+			if (dut.raw_last[i]) return i - (REC - 1);
 		return -1;
 	endfunction
 
 	function automatic signed [31:0] rec_sample(input integer hdr, input integer ch);
 		reg [63:0] w;
-		w = dut.zynq_ps_wrapper_0.raw_data[hdr + 1 + ch / 2];
+		w = dut.raw_data[hdr + 1 + ch / 2];
 		return ch[0] ? w[63:32] : w[31:0];
 	endfunction
 
 	task automatic wait_records(input integer from, input integer n);   // n records take n x 208 us
-		for (int t = 0; dut.zynq_ps_wrapper_0.raw_n < from + REC * n + REC; t++) begin
+		for (int t = 0; dut.raw_n < from + REC * n + REC; t++) begin
 			if (t == 100) $fatal(1, "no raw records after 10 ms");
 			#100_000;
 		end
@@ -124,17 +124,17 @@ module mclp_top_tb #(
 		wr(STAB_COUNT, 10);
 
 		// ---- raw capture, tap 0: AFE words, timestamps 4166.7 clk_spi ticks apart
-		n0 = dut.zynq_ps_wrapper_0.raw_n;
+		n0 = dut.raw_n;
 		wr(CTRL, EN | RAW_EN);
 		wait_records(n0, 3);
 		wr(CTRL, EN);
 		h = record_after(n0);
 		h2 = h + REC;
-		check(dut.zynq_ps_wrapper_0.raw_data[h][15:14] == 2'd0, "tap 0 in the header");
+		check(dut.raw_data[h][15:14] == 2'd0, "tap 0 in the header");
 		for (int k = 0; k < N_CH; k++)
 			check(rec_sample(h, k) == sample[k], $sformatf("tap 0 channel %0d = %0d", k, sample[k]));
-		check(dut.zynq_ps_wrapper_0.raw_data[h + REC - 1] == 0, "tap 0 fault word clear");
-		d = dut.zynq_ps_wrapper_0.raw_data[h2][63:16] - dut.zynq_ps_wrapper_0.raw_data[h][63:16];
+		check(dut.raw_data[h + REC - 1] == 0, "tap 0 fault word clear");
+		d = dut.raw_data[h2][63:16] - dut.raw_data[h][63:16];
 		check(d >= 4165 && d <= 4168, $sformatf("frame period %0d clk_spi ticks", d));
 
 		// ---- gain and trim, tap 3: trim(gain(256 x)), 256 = CIC gain 512 with the LSB dropped
@@ -144,12 +144,12 @@ module mclp_top_tb #(
 		wr(GAIN + 0, g[0]);
 		wr(TRIM + 4 * TR_CH, t[TR_CH]);
 		ms(1);
-		n0 = dut.zynq_ps_wrapper_0.raw_n;
+		n0 = dut.raw_n;
 		wr(CTRL, EN | RAW_EN | (3 << 4));
 		wait_records(n0, 2);
 		wr(CTRL, EN);
 		h = record_after(n0) + REC;
-		check(dut.zynq_ps_wrapper_0.raw_data[h][15:14] == 2'd3, "tap 3 in the header");
+		check(dut.raw_data[h][15:14] == 2'd3, "tap 3 in the header");
 		for (int k = 0; k < N_CH; k++)
 			check(rec_sample(h, k) == scale(scale(256 * longint'(sample[k]), g[k]), t[k]),
 			      $sformatf("tap 3 channel %0d", k));

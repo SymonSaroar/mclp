@@ -1,6 +1,6 @@
 
 ################################################################
-# This is a generated script based on design: zynq_ps
+# This is a generated script based on design: mclp_top
 #
 # Though there are limitations about the generated script,
 # the main purpose of this utility is to make learning
@@ -41,7 +41,7 @@ if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
 ################################################################
 
 # To test this script, run the following commands from Vivado Tcl console:
-# source zynq_ps_script.tcl
+# source mclp_top_script.tcl
 
 # If there is no project opened, this script will create a
 # project, but make sure you do not have an existing project
@@ -56,7 +56,7 @@ if { $list_projs eq "" } {
 
 # CHANGE DESIGN NAME HERE
 variable design_name
-set design_name zynq_ps
+set design_name mclp_top
 
 # If you do not already have an existing IP Integrator design open,
 # you can create a design using the following command:
@@ -135,6 +135,8 @@ xilinx.com:ip:proc_sys_reset:5.0\
 xilinx.com:ip:axi_dma:7.1\
 xilinx.com:ip:xlconcat:2.1\
 xilinx.com:ip:smartconnect:1.0\
+xilinx.com:ip:clk_wiz:6.0\
+mclp:ip:mclp_core:1.0\
 "
 
    set list_ips_missing ""
@@ -202,35 +204,13 @@ proc create_root_design { parentCell } {
 
   set FIXED_IO [ create_bd_intf_port -mode Master -vlnv xilinx.com:display_processing_system7:fixedio_rtl:1.0 FIXED_IO ]
 
-  set M_AXI_REGS [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_REGS ]
-  set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {32} \
-   CONFIG.DATA_WIDTH {32} \
-   CONFIG.PROTOCOL {AXI4LITE} \
-   ] $M_AXI_REGS
-
-  set S_AXIS_RAW [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS_RAW ]
-  set_property -dict [ list \
-   CONFIG.HAS_TKEEP {0} \
-   CONFIG.HAS_TLAST {1} \
-   CONFIG.HAS_TREADY {1} \
-   CONFIG.HAS_TSTRB {0} \
-   CONFIG.LAYERED_METADATA {undef} \
-   CONFIG.TDATA_NUM_BYTES {8} \
-   CONFIG.TDEST_WIDTH {0} \
-   CONFIG.TID_WIDTH {0} \
-   CONFIG.TUSER_WIDTH {0} \
-   ] $S_AXIS_RAW
-
 
   # Create ports
-  set FCLK_CLK0 [ create_bd_port -dir O -type clk FCLK_CLK0 ]
-  set_property -dict [ list \
-   CONFIG.ASSOCIATED_BUSIF {M_AXI_REGS:S_AXIS_RAW} \
-   CONFIG.ASSOCIATED_RESET {peripheral_aresetn} \
- ] $FCLK_CLK0
-  set peripheral_aresetn [ create_bd_port -dir O -from 0 -to 0 -type rst peripheral_aresetn ]
-  set mclp_irq [ create_bd_port -dir I -type intr mclp_irq ]
+  set adc_sclk [ create_bd_port -dir O adc_sclk ]
+  set adc_din [ create_bd_port -dir O adc_din ]
+  set adc_cs_n [ create_bd_port -dir O adc_cs_n ]
+  set adc_sync_n [ create_bd_port -dir O adc_sync_n ]
+  set adc_dout [ create_bd_port -dir I -from 7 -to 0 adc_dout ]
 
   # Create instance: processing_system7_0, and set properties
   set processing_system7_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 processing_system7_0 ]
@@ -556,14 +536,38 @@ proc create_root_design { parentCell } {
   set_property CONFIG.NUM_SI {2} $smartconnect_1
 
 
+  # Create instance: clk_wiz, and set properties
+  # FCLK0 100 MHz -> clk_spi 20 MHz (SCLK 2.5 MHz = /8), clk_dsp 50 MHz. FCLK0 already leaves the PS
+  # through a BUFG, hence No_buffer. The board flow breaks No_buffer generation in a board-part project
+  # (clk_wiz xdc.ttcl), so it is off.
+  set clk_wiz [ create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_wiz ]
+  set_property -dict [list \
+    CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {20.000} \
+    CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {50.000} \
+    CONFIG.CLKOUT2_USED {true} \
+    CONFIG.CLK_OUT1_PORT {clk_spi} \
+    CONFIG.CLK_OUT2_PORT {clk_dsp} \
+    CONFIG.PRIM_IN_FREQ {100.000} \
+    CONFIG.PRIM_SOURCE {No_buffer} \
+    CONFIG.RESET_PORT {resetn} \
+    CONFIG.RESET_TYPE {ACTIVE_LOW} \
+    CONFIG.USE_BOARD_FLOW {false} \
+  ] $clk_wiz
+
+
+  # Create instance: mclp_core_0, and set properties
+  set mclp_core_0 [ create_bd_cell -type ip -vlnv mclp:ip:mclp_core:1.0 mclp_core_0 ]
+  set_property CONFIG.N_CH {8} $mclp_core_0
+
+
   # Create interface connections
-  connect_bd_intf_net -intf_net S_AXIS_RAW_1 [get_bd_intf_ports S_AXIS_RAW] [get_bd_intf_pins axi_dma/S_AXIS_S2MM]
+  connect_bd_intf_net -intf_net mclp_core_0_m_axis_raw [get_bd_intf_pins mclp_core_0/m_axis_raw] [get_bd_intf_pins axi_dma/S_AXIS_S2MM]
   connect_bd_intf_net -intf_net axi_dma_M_AXI_S2MM [get_bd_intf_pins axi_dma/M_AXI_S2MM] [get_bd_intf_pins smartconnect_1/S01_AXI]
   connect_bd_intf_net -intf_net axi_dma_M_AXI_SG [get_bd_intf_pins axi_dma/M_AXI_SG] [get_bd_intf_pins smartconnect_1/S00_AXI]
   connect_bd_intf_net -intf_net processing_system7_0_DDR [get_bd_intf_ports DDR] [get_bd_intf_pins processing_system7_0/DDR]
   connect_bd_intf_net -intf_net processing_system7_0_FIXED_IO [get_bd_intf_ports FIXED_IO] [get_bd_intf_pins processing_system7_0/FIXED_IO]
   connect_bd_intf_net -intf_net processing_system7_0_M_AXI_GP0 [get_bd_intf_pins processing_system7_0/M_AXI_GP0] [get_bd_intf_pins smartconnect_0/S00_AXI]
-  connect_bd_intf_net -intf_net smartconnect_0_M00_AXI [get_bd_intf_ports M_AXI_REGS] [get_bd_intf_pins smartconnect_0/M00_AXI]
+  connect_bd_intf_net -intf_net smartconnect_0_M00_AXI [get_bd_intf_pins smartconnect_0/M00_AXI] [get_bd_intf_pins mclp_core_0/s_axi]
   connect_bd_intf_net -intf_net smartconnect_0_M01_AXI [get_bd_intf_pins smartconnect_0/M01_AXI] [get_bd_intf_pins axi_dma/S_AXI_LITE]
   connect_bd_intf_net -intf_net smartconnect_1_M00_AXI [get_bd_intf_pins smartconnect_1/M00_AXI] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
 
@@ -573,7 +577,8 @@ proc create_root_design { parentCell } {
   connect_bd_net -net irq_concat_dout  [get_bd_pins irq_concat/dout] \
   [get_bd_pins processing_system7_0/IRQ_F2P]
   connect_bd_net -net processing_system7_0_FCLK_CLK0  [get_bd_pins processing_system7_0/FCLK_CLK0] \
-  [get_bd_ports FCLK_CLK0] \
+  [get_bd_pins mclp_core_0/aclk] \
+  [get_bd_pins clk_wiz/clk_in1] \
   [get_bd_pins rst_ps7/slowest_sync_clk] \
   [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] \
   [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] \
@@ -588,13 +593,31 @@ proc create_root_design { parentCell } {
   [get_bd_pins smartconnect_0/aresetn] \
   [get_bd_pins smartconnect_1/aresetn]
   connect_bd_net -net rst_ps7_peripheral_aresetn  [get_bd_pins rst_ps7/peripheral_aresetn] \
-  [get_bd_ports peripheral_aresetn] \
+  [get_bd_pins mclp_core_0/aresetn] \
+  [get_bd_pins clk_wiz/resetn] \
   [get_bd_pins axi_dma/axi_resetn]
-  connect_bd_net -net mclp_irq_1  [get_bd_ports mclp_irq] \
+  connect_bd_net -net mclp_core_0_irq  [get_bd_pins mclp_core_0/irq] \
   [get_bd_pins irq_concat/In1]
+  # The PS reset holds the MMCM in reset, so clk_locked is low while aresetn is (mclp_core's reset rule)
+  connect_bd_net -net clk_wiz_clk_spi  [get_bd_pins clk_wiz/clk_spi] \
+  [get_bd_pins mclp_core_0/clk_spi]
+  connect_bd_net -net clk_wiz_clk_dsp  [get_bd_pins clk_wiz/clk_dsp] \
+  [get_bd_pins mclp_core_0/clk_dsp]
+  connect_bd_net -net clk_wiz_locked  [get_bd_pins clk_wiz/locked] \
+  [get_bd_pins mclp_core_0/clk_locked]
+  connect_bd_net -net mclp_core_0_adc_sclk  [get_bd_pins mclp_core_0/adc_sclk] \
+  [get_bd_ports adc_sclk]
+  connect_bd_net -net mclp_core_0_adc_din  [get_bd_pins mclp_core_0/adc_din] \
+  [get_bd_ports adc_din]
+  connect_bd_net -net mclp_core_0_adc_cs_n  [get_bd_pins mclp_core_0/adc_cs_n] \
+  [get_bd_ports adc_cs_n]
+  connect_bd_net -net mclp_core_0_adc_sync_n  [get_bd_pins mclp_core_0/adc_sync_n] \
+  [get_bd_ports adc_sync_n]
+  connect_bd_net -net adc_dout_1  [get_bd_ports adc_dout] \
+  [get_bd_pins mclp_core_0/adc_dout]
 
   # Create address segments
-  assign_bd_address -offset 0x43C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs M_AXI_REGS/Reg] -force
+  assign_bd_address -offset 0x43C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs mclp_core_0/s_axi/reg0] -force
   assign_bd_address -offset 0x40400000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs axi_dma/S_AXI_LITE/Reg] -force
   assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces axi_dma/Data_S2MM] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] -force
   assign_bd_address -offset 0x00000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces axi_dma/Data_SG] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] -force

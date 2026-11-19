@@ -1,7 +1,8 @@
 /*
  * mclp: user-space access through UIO (sw/linux/mclp).
- * The register block sits behind an external port of the block design, so the system device tree has
- * no node for it. The AXI DMA is handed to UIO as well, with the reserved capture ring as its second map.
+ * mclp_core_0 is the packaged core in the block design; sdtgen writes its node (registers at 0x43c00000,
+ * the interrupt through irq_concat) and this file hands it to UIO. The AXI DMA is handed to UIO as well,
+ * with the reserved capture ring as its second map.
  * The driver binds with: modprobe uio_pdrv_genirq of_id=generic-uio (done by /etc/init.d/mclp).
  */
 / {
@@ -17,13 +18,8 @@
 	};
 };
 
-&amba_pl {
-	mclp: mclp@43c00000 {
-		compatible = "generic-uio";
-		reg = <0x43c00000 0x10000>;
-		interrupt-parent = <&intc>;
-		interrupts = <0 30 4>;              /* IRQ_F2P[1] = mclp_irq: GIC ID 62, level high */
-	};
+&mclp_core_0 {
+	compatible = "generic-uio";
 };
 
 &axi_dma {

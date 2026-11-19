@@ -98,6 +98,21 @@ unless you changed the design and exported a new XSA (README step 3B).
    petalinux-config --get-hw-description ../../build/sdt
    ```
 
+   The import regenerates the Linux device tree in `components/plnx_workspace/device-tree`, but it can keep
+   the previous one. Check that the core's node is in it before you build:
+
+   ```sh
+   grep -c mclp_core_0 components/plnx_workspace/device-tree/cortexa9-linux.dts
+   ```
+
+   0 means the old tree is still there (the build would stop with "Label or path mclp_core_0 not found" in
+   `mclp.dtsi`). Delete it and import again:
+
+   ```sh
+   rm -rf components/plnx_workspace/device-tree
+   petalinux-config --get-hw-description ../../build/sdt
+   ```
+
 ## 4. Build
 
 1. Set the build's parallelism to about 2 GB of RAM per thread, or large compiles fail when memory runs out.
