@@ -83,7 +83,7 @@ AD7190 pin table. A reference for the MCLP IP: nothing has been built or tested 
 | Pin | Use on the card |
 |---|---|
 | 12P0V (C35, C37) | buck input, 1 A maximum per VITA 57.1 |
-| VADJ (G39, H40) | DVDD 3.3 V: the ZC702's VADJ must be set to 3.3 V (README step 1) |
+| VADJ (G39, H40) | DVDD 3.3 V: the ZC702's VADJ must be set to 3.3 V (main README, Set VADJ to 3.3 V) |
 | 3P3VAUX (D32) | FRU EEPROM supply |
 | 3P3V (C39, D36, D38, D40) | not used |
 | GND (all GND pins) | ground plane |

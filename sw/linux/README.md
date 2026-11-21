@@ -3,7 +3,7 @@
 Linux for MCLP on the ZC702: a PetaLinux 2025.1 project in the system device tree (SDT) flow,
 the `meta-mclp` layer that gives user space access to the PL, `mclp`, the Linux console, and `mclpd`,
 the REST and MQTT service. The
-sections below build the SD card image from this folder and boot it.
+sections below build the SD card image from this folder, boot it, and document `mclp` and `mclpd`.
 
 ## What is in this folder
 
@@ -64,9 +64,9 @@ stops with `uid not found: 1000`. Nothing in this project needs the SDK.
    source ~/petalinux/2025.1/settings.sh
    ```
 
-The build needs about 100 GB on a Linux file system. On Windows, use WSL2 and keep the repository inside the
-WSL file system (for example `~/mclp`), not on `/mnt/c` or `/mnt/d`: the Windows drives
-are slow through WSL and do not keep Linux file ownership, which the build relies on.
+The build needs about 100 GB on a Linux file system. On Windows, use WSL2 and keep the repository in the WSL
+file system, for example `~/mclp`. Through WSL, `/mnt/c` and `/mnt/d` are slow and lose Linux file ownership,
+which the build needs.
 
 ## 2. Get the repository
 
@@ -75,13 +75,13 @@ git clone <repository-url> ~/mclp
 cd ~/mclp/sw/linux
 ```
 
-The build runs in this folder. Clone the whole repository, not only `sw/linux`: the `mclp` recipe takes
-its sources from `sw/common` and `sw/linux/mclp` through `MCLP_SW_DIR`.
+The build runs in this folder. Clone the whole repository. The `mclp` recipe takes its
+sources from `sw/common` and `sw/linux/mclp` through `MCLP_SW_DIR`.
 
 ## 3. Hardware description
 
 The project already holds the system device tree and bitstream of this repository's design. Skip this step
-unless you changed the design and exported a new XSA (README step 3B).
+unless you changed the design and exported a new XSA (main README, Build from source).
 
 1. Generate the system device tree from the XSA. `sdtgen` ships with Vitis 2025.1; `-board_dts zc702` adds
    the board's Ethernet PHY, I2C devices and LEDs. Run it from the repository root:
@@ -145,13 +145,12 @@ to check a change to the layer.
 
 ## 5. Boot on the board
 
-SD card (SW16 positions 3 and 4 at 1): write the image as in README step 3A.
+SD card (SW16 positions 3 and 4 at 1): write the `.wic`, or partition the card and copy the files from
+`images/linux/` as in the main README (Prebuilt images). `lsblk` shows the card's device name.
 
 ```sh
 sudo dd if=images/linux/petalinux-sdimage.wic of=/dev/sdX bs=4M conv=fsync status=progress
 ```
-
-`/dev/sdX` is the SD card; check the name with `lsblk` before writing.
 
 JTAG (SW16 all 0, `hw_server` running on the machine with the cable):
 
@@ -176,20 +175,78 @@ sudo mclp -t bist
 mclp [-t] [command ...]
 ```
 
-Without a command it runs the interactive console, with the commands of the bare-metal console: `status`,
-`w`, `live`, `tare`, `zero`, `cal ...`, `stab`, `wim`, `decim`, `fir`, `raw`, `faults`, `adc`, `selftest`,
-`bist`, `info`, `trace`, `rd`, `wr`, `help` (README step 4). With a command it runs that command and exits,
-with status 1 if the command reports a failure; settings the command changes are saved to
-`/etc/mclp/mclp.cal`.
+Without a command, `mclp` opens the interactive console (`mclp>` prompt). With a command it runs that command
+and exits, with status 1 when the command reports a failure. `/dev/uio*` belongs to root: run `sudo mclp`.
+A command saves every setting it changes to `/etc/mclp/mclp.cal` at once, tare included. `mclp` loads the
+file at every start. The bare-metal console takes the same commands and saves with `cal save`.
 
-`/dev/uio*` belongs to root, so the `petalinux` user runs `sudo mclp ...`. At boot, `/etc/init.d/mclp`
-runs `mclp init`: it checks the ID register, loads and applies the calibration, and runs the AD7190
-power-up list. The root file system is EXT4 on the SD card's second partition (`/dev/mmcblk0p2`), so the
-calibration survives a reboot. With INITRD instead (`petalinux-config` -> Image Packaging Configuration),
-`/etc` is in RAM and the calibration is lost at power-off.
+| Command | Action |
+|---|---|
+| `status` | Clocks, sequencer, weight, faults, calibration, filters |
+| `w`, `live` | One reading; live reading at 10 Hz with stability, overload and weigh-in-motion events |
+| `tare`, `tare clear`, `zero` | Tare at the current load; set the no-load zero point |
+| `cal ...` | Calibration, below |
+| `stab <band> <samples>` | Stability window; band in kg once spanned |
+| `wim <enter> <exit> <settle>`, `wim off` | Weigh-in-motion thresholds in kg above zero; without arguments, the last result |
+| `decim <n>`, `fir <hz>` | RESULT rate 600/n Hz; FIR low-pass cutoff, 0.5 to 37 Hz |
+| `raw <tap> <n>` | Capture n records through the DMA (tap 0 ADC code, 1 CIC, 2 gain/offset, 3 trim), print CSV |
+| `faults`, `faults clear` | Sticky flags per channel: ERR, NOREF, PARITY, STALE, MISMATCH |
+| `adc` | Rerun the AD7190 power-up list: reset, ID, zero-scale calibration, stream |
+| `selftest` | Burnout currents (open wire), reference detect, internal-short offset and noise per channel |
+| `bist` | PL loopback: bit-exact data on all lanes, injected ERR on each channel, injected parity error |
+| `info` | Software version, addresses, calibration file |
+| `trace on`, `trace off` | Print every register access, decoded, with the equivalent `devmem` command |
+| `rd <addr>`, `wr <addr> <value>` | Register access. An address below 0x1000 is an offset from 0x43C0_0000. |
 
-`-t` prints every register access as it happens, decoded, with the `devmem` command that does the same, and
-a heading for each step of a command:
+At boot, `/etc/init.d/mclp` runs `mclp init`: ID check, calibration load, AD7190 power-up list. The root file
+system is ext4 on the SD card's second partition (`/dev/mmcblk0p2`). With INITRD instead (`petalinux-config`
+-> Image Packaging Configuration), `/etc` is in RAM and the calibration is lost at power-off.
+
+### First start
+
+1. `status`: ID `4D4C0308` (register map version 3, 8 channels), clocks locked, sequencer streaming.
+2. `bist`: the loopback emulator replaces the DOUT lines. The test checks the capture path bit for bit, then
+   the fault flags of every channel. A failure points at the FPGA image.
+3. `selftest`, per channel: `OPEN` is full scale with the burnout currents on (broken cable or load cell).
+   `MISSING` is a missing reference (no excitation). A noise figure above the limit points at grounding or
+   shielding. The ADCs return to normal operation afterwards.
+4. `faults`: flags set during operation. `ERR` over-range or open input, `NOREF` missing reference, `PARITY`
+   corrupted word on the cable, `STALE` word read before the conversion finished, `MISMATCH` loopback error.
+   `faults clear` resets them.
+
+### Calibration
+
+One test weight of known mass, in one session: the interactive console (`sudo mclp`), or REST or MQTT
+commands to `mclpd`. The corner steps keep their measurements in the program's memory. Separate
+`sudo mclp cal ...` calls do not share them.
+
+1. `cal zero`, platform empty. Measures each channel for 1 s and writes the offsets: every channel reads 0 at
+   no load.
+2. `cal corner 0` to `cal corner 7`, test weight over each load cell in turn. Each step records the eight
+   channel responses and prints the weight split between the cells.
+3. `cal solve <kg>`. Fits the corner trims for the same reading at every position and sets the span (kg per
+   count) from the test weight. Fewer than eight positions work; trims the positions do not determine stay
+   near 1.
+4. Linux saves after each step. On bare metal, `cal save` stores the calibration, filter and threshold
+   settings in `0:/mclp.cal`.
+
+`cal span <kg>` re-spans later without the corner test.
+
+### Daily use
+
+- `zero`, platform empty: corrects drift of the no-load reading.
+- `tare`: subtracts a container until `tare clear`, across restarts.
+- `live`: weight with the stability flag. `stab <band> <samples>` sets how still the reading must be to count
+  as stable.
+- `wim <enter> <exit> <settle>`: weigh-in-motion. A load passing over the platform is averaged over its
+  plateau and reported in `live` and `wim`.
+- `fir <hz>`: a lower cutoff gives less noise and a slower response. `decim <n>`: RESULT rate.
+- `raw <tap> <n>`: per-channel data for analysis. `raw 1 600` records one second after the CIC.
+
+### Register trace
+
+`-t`, or `trace on` in the console, prints every register access with its decoded fields, the `devmem`
+command that does the same, and a heading for each step of a command:
 
 ```
 [    67.016 ms] ---- BIST check 3: inject ERR on channel 4, only FAULT[4].ERR may set
@@ -203,11 +260,83 @@ a heading for each step of a command:
 mclpd [-c /etc/mclp/mclpd.conf]
 ```
 
-The REST and MQTT service (README step 5), started by `/etc/init.d/mclp` after `mclp init` and stopped by
-`/etc/init.d/mclp stop`. It links the same `sw/common` code as `mclp` and runs each command with its output
-captured into the JSON reply. `mclp` and `mclpd` take an exclusive lock on `/run/mclp.lock` for every
-command and every reading, and start each command from the stored settings, so neither works from settings
-the other has changed. Log: `/var/log/mclpd.log`.
+REST over HTTPS and MQTT over TLS for the console commands and live readings. `/etc/init.d/mclp` starts it
+at boot after `mclp init`; `/etc/init.d/mclp stop` stops it. It links the same `sw/common` code as `mclp` and
+returns each command's console output in the JSON reply. `mclp` and `mclpd` take an exclusive lock on
+`/run/mclp.lock` for every command and reading, and start each command from the stored settings. A network
+command waits while `sudo mclp live` runs on the board, and the reverse. Log: `/var/log/mclpd.log`.
+
+### Accounts
+
+REST uses HTTP basic authentication. `openssl passwd -6` asks for the password and prints its hash:
+
+```sh
+echo "alice:operator:$(openssl passwd -6)" | sudo tee -a /etc/mclp/users
+echo "panel:viewer:$(openssl passwd -6)" | sudo tee -a /etc/mclp/users
+sudo chmod 600 /etc/mclp/users
+```
+
+A viewer reads the weight, faults and settings, and runs the reporting commands: `status`, `info`, `w`, and
+`wim`, `faults`, `stab`, `decim`, `fir`, `cal show` without arguments. An operator runs every command.
+mclpd reads the file on every request. Without accounts, REST answers 401.
+
+### Certificate
+
+The init script creates a self-signed certificate, `/etc/mclp/server.crt`, and its key at the first start.
+Clients trust that file, or you replace both files with a certificate from your own CA and run
+`sudo /etc/init.d/mclp restart`.
+
+### REST
+
+Port 443.
+
+| Request | Answer | Role |
+|---|---|---|
+| `GET /api/v1/weight` | `{"value":12.345,"unit":"kg","stable":true,"overload":false,"seq":..,"time_ms":..,"wim":{..}}` | viewer |
+| `GET /api/v1/faults` | `{"channels":[[],["ERR"],..],"any":true}` | viewer |
+| `GET /api/v1/settings` | Calibration, FIR, decimation, stability and weigh-in-motion settings | viewer |
+| `POST /api/v1/cmd` with `{"cmd":"<command>"}` | `{"cmd":..,"ok":true,"output":"<console output>"}` | viewer for the reporting commands, else operator |
+
+```sh
+scp petalinux@<board>:/etc/mclp/server.crt .
+curl --cacert server.crt -u alice https://<board>/api/v1/weight
+curl --cacert server.crt -u alice -d '{"cmd":"tare"}' https://<board>/api/v1/cmd
+```
+
+curl checks the certificate against the host name in the URL. Use the name the certificate was made for (the
+board's hostname, `mclp` by default), or `-k` while testing.
+
+### MQTT
+
+Set the broker in `/etc/mclp/mclpd.conf`, then `sudo /etc/init.d/mclp restart`:
+
+```
+mqtt_host = broker.example.com
+mqtt_port = 8883
+mqtt_ca = /etc/mclp/broker-ca.crt      # CA that signed the broker's certificate
+mqtt_user = scale-01
+mqtt_password = ...
+device = scale-01                      # topic level and client ID; default: the hostname
+publish_hz = 10
+ntp_server = pool.ntp.org              # empty: no NTP
+```
+
+TLS checks the broker's certificate against the board's clock. The boot script starts `ntpd` with
+`ntp_server` and writes each sync to the board's RTC, which sets the clock at the next boot. Without a time
+server and a set RTC, the connection fails with "A TLS error occurred". mclpd retries every 2 s, doubling to
+60 s, and connects once the clock is right.
+
+| Topic | Payload |
+|---|---|
+| `mclp/<device>/weight` | As `GET /api/v1/weight` without `wim`, on each RESULT update, at most `publish_hz` per second (QoS 0) |
+| `mclp/<device>/wim` | `{"value":..,"unit":"kg","samples":..,"seconds":..}` per weigh-in-motion result (QoS 1) |
+| `mclp/<device>/faults` | As `GET /api/v1/faults`, on change (QoS 1, retained) |
+| `mclp/<device>/status` | `online`; `offline` when mclpd stops or loses the connection (QoS 1, retained) |
+| `mclp/<device>/cmd` | Publish a console command line here, for example `tare` or `cal corner 3` |
+| `mclp/<device>/cmd/result` | The reply, as from `POST /api/v1/cmd` (QoS 1) |
+
+mclpd accepts every command on the `cmd` topic. Restrict publish rights on it to the clients that may operate
+the scale (broker ACLs). `live` is refused there and over REST.
 
 ## UIO
 
