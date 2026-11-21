@@ -96,6 +96,10 @@ Each release carries prebuilt boot files for it.
 
 ## Product specification
 
+### Block diagram
+
+![mclp_core block diagram](docs/mclp_core.svg)
+
 ### Parameters
 
 | Parameter | Values | Default | Description |
@@ -570,6 +574,7 @@ sw/common/                Register operations, calibration, console commands (ba
 sw/baremetal/             Bare-metal console and its Vitis build script
 sw/linux/                 PetaLinux project, meta-mclp layer, mclp and mclpd
 hw/adc-card/              8-channel AD7190 FMC card, KiCad
+docs/mclp_core.svg        Core block diagram (Product specification)
 docs/architecture.drawio  Block diagram with instance names and clock-domain crossings
 ```
 
