@@ -2,8 +2,8 @@ SUMMARY = "MCLP console and REST/MQTT service over UIO"
 DESCRIPTION = "mclp: weighing, calibration, raw capture, AD7190 self-test and the PL loopback BIST, \
 with a decoded register trace (-t). mclpd: the same commands and live readings over HTTPS (REST) and \
 MQTT with TLS. Both share sw/common with the bare-metal console."
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LICENSE = "GPL-3.0-only"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/GPL-3.0-only;md5=c79ff39f19dfec6d293b95dea7b07891"
 
 # The sources are the repository's: sw/common (shared with the bare-metal console) and sw/linux/mclp
 FILESEXTRAPATHS:prepend := "${MCLP_SW_DIR}:${THISDIR}/files:"

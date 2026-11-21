@@ -1,0 +1,22 @@
+MCLP: Multi-Channel Load-cell Platform
+Copyright (c) 2026 Symon Saroar
+
+MCLP is dual licensed: under the open source licenses below, or under a commercial license from the
+copyright holder.
+
+Open source licenses
+
+- Hardware: everything outside sw/ (RTL, test benches, RAM images, Tcl scripts, constraints, the ADC card
+  design, documentation) is licensed under the CERN Open Hardware Licence Version 2 - Strongly Reciprocal,
+  CERN-OHL-S-2.0. Text: LICENSES/CERN-OHL-S-2.0.txt.
+- Software: sw/ is licensed under the GNU General Public License version 3, GPL-3.0-only.
+  Text: LICENSES/GPL-3.0-only.txt.
+
+Files that carry their own license notice keep that license. sw/linux/project-spec holds files generated
+by AMD's PetaLinux and device-tree tools; meta-user is AMD's template, under its COPYING.MIT.
+
+Commercial license
+
+Both open source licenses require a product built on MCLP to publish its source: under CERN-OHL-S, the
+complete design of the FPGA or board MCLP goes into; under GPL-3.0, the software. For a product that keeps
+its design closed, a commercial license is available from Symon Saroar, saroarsymon@gmail.com.
