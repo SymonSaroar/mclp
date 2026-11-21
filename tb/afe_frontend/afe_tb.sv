@@ -36,8 +36,8 @@ module afe_tb (
 
 	afe_frontend u_fe (
 		.clk, .rst, .enable, .loopback, .seq_start, .loopback_cfg, .loopback_value, .seq_addr, .seq_q,
-		.seq_busy, .seq_resp, .adc_sclk(sclk), .adc_din(din), .adc_cs_n(cs_n), .adc_sync_n(sync_n),
-		.adc_dout(dout), .m_valid, .m_ready, .m_data, .m_last
+		.seq_busy, .seq_resp, .spi_sclk(sclk), .spi_sdo(din), .spi_cs_n(cs_n), .adc_sync_n(sync_n),
+		.spi_sdi(dout), .m_valid, .m_ready, .m_data, .m_last
 	);
 
 	for (genvar k = 0; k < 8; k++) begin : g_adc

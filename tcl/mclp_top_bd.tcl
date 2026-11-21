@@ -206,11 +206,11 @@ proc create_root_design { parentCell } {
 
 
   # Create ports
-  set adc_sclk [ create_bd_port -dir O adc_sclk ]
-  set adc_din [ create_bd_port -dir O adc_din ]
-  set adc_cs_n [ create_bd_port -dir O adc_cs_n ]
+  set spi_sclk [ create_bd_port -dir O spi_sclk ]
+  set spi_sdo [ create_bd_port -dir O spi_sdo ]
+  set spi_cs_n [ create_bd_port -dir O spi_cs_n ]
   set adc_sync_n [ create_bd_port -dir O adc_sync_n ]
-  set adc_dout [ create_bd_port -dir I -from 7 -to 0 adc_dout ]
+  set spi_sdi [ create_bd_port -dir I -from 7 -to 0 spi_sdi ]
 
   # Create instance: processing_system7_0, and set properties
   set processing_system7_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 processing_system7_0 ]
@@ -605,16 +605,16 @@ proc create_root_design { parentCell } {
   [get_bd_pins mclp_core_0/clk_dsp]
   connect_bd_net -net clk_wiz_locked  [get_bd_pins clk_wiz/locked] \
   [get_bd_pins mclp_core_0/clk_locked]
-  connect_bd_net -net mclp_core_0_adc_sclk  [get_bd_pins mclp_core_0/adc_sclk] \
-  [get_bd_ports adc_sclk]
-  connect_bd_net -net mclp_core_0_adc_din  [get_bd_pins mclp_core_0/adc_din] \
-  [get_bd_ports adc_din]
-  connect_bd_net -net mclp_core_0_adc_cs_n  [get_bd_pins mclp_core_0/adc_cs_n] \
-  [get_bd_ports adc_cs_n]
+  connect_bd_net -net mclp_core_0_adc_sclk  [get_bd_pins mclp_core_0/spi_sclk] \
+  [get_bd_ports spi_sclk]
+  connect_bd_net -net mclp_core_0_adc_din  [get_bd_pins mclp_core_0/spi_sdo] \
+  [get_bd_ports spi_sdo]
+  connect_bd_net -net mclp_core_0_adc_cs_n  [get_bd_pins mclp_core_0/spi_cs_n] \
+  [get_bd_ports spi_cs_n]
   connect_bd_net -net mclp_core_0_adc_sync_n  [get_bd_pins mclp_core_0/adc_sync_n] \
   [get_bd_ports adc_sync_n]
-  connect_bd_net -net adc_dout_1  [get_bd_ports adc_dout] \
-  [get_bd_pins mclp_core_0/adc_dout]
+  connect_bd_net -net adc_dout_1  [get_bd_ports spi_sdi] \
+  [get_bd_pins mclp_core_0/spi_sdi]
 
   # Create address segments
   assign_bd_address -offset 0x43C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs mclp_core_0/s_axi/reg0] -force

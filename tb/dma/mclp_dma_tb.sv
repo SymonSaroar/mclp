@@ -33,7 +33,7 @@ module mclp_dma_tb;
 
 	mclp_top_wrapper dut (
 		.FIXED_IO_ps_clk(ps_clk), .FIXED_IO_ps_porb(ps_rstn), .FIXED_IO_ps_srstb(ps_rstn),
-		.adc_sclk(sclk), .adc_din(din), .adc_cs_n(cs_n), .adc_sync_n(sync_n), .adc_dout(dout)
+		.spi_sclk(sclk), .spi_sdo(din), .spi_cs_n(cs_n), .adc_sync_n(sync_n), .spi_sdi(dout)
 	);
 
 	for (genvar k = 0; k < 8; k++) begin : g_adc

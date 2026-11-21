@@ -29,7 +29,7 @@ module mclp_top_tb #(
 	reg   [31:0] init_list [0:23];
 	integer     errors = 0;
 
-	mclp_top_wrapper #(.N_CH(N_CH)) dut (.adc_sclk(sclk), .adc_din(din), .adc_cs_n(cs_n), .adc_sync_n(sync_n), .adc_dout(dout));
+	mclp_top_wrapper #(.N_CH(N_CH)) dut (.spi_sclk(sclk), .spi_sdo(din), .spi_cs_n(cs_n), .adc_sync_n(sync_n), .spi_sdi(dout));
 
 	for (genvar k = 0; k < N_CH; k++) begin : g_adc
 		ad7190_model u_adc (

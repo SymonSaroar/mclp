@@ -26,12 +26,12 @@ module afe_frontend #(
 	output wire          seq_busy,
 	output wire [32*N_CH-1:0] seq_resp,
 
-	// AD7190 pins
-	output wire          adc_sclk,
-	output wire          adc_din,
-	output wire          adc_cs_n,
+	// SPI master to the AD7190 chips: spi_sdo to DIN, spi_sdi[k] from DOUT/RDY of chip k
+	output wire          spi_sclk,
+	output wire          spi_sdo,
+	output wire          spi_cs_n,
 	output wire          adc_sync_n,
-	input  wire [N_CH-1:0] adc_dout,
+	input  wire [N_CH-1:0] spi_sdi,
 
 	// Sample stream {ts, flags, ch, data}
 	output wire          m_valid,
@@ -42,7 +42,7 @@ module afe_frontend #(
 
 	wire [N_CH-1:0]    emu_dout;
 	wire [32*N_CH-1:0] emu_words;
-	wire [N_CH-1:0]    dout_pin = loopback ? emu_dout : adc_dout;
+	wire [N_CH-1:0]    dout_pin = loopback ? emu_dout : spi_sdi;
 	wire [N_CH-1:0]    dout_sync;
 	wire         spi_start, spi_busy, spi_done, frame_valid;
 	wire [5:0]   ntx, nrx;
@@ -52,7 +52,7 @@ module afe_frontend #(
 	reg  [N_CH-1:0]    mismatch;
 	integer      k;
 
-	assign adc_cs_n = !enable;
+	assign spi_cs_n = !enable;
 
 	// Loopback checker: received word against the emulator's word, per lane
 	always @(*) begin
@@ -86,8 +86,8 @@ module afe_frontend #(
 		.busy(spi_busy),
 		.done(spi_done),
 		.rx(rx),
-		.sclk(adc_sclk),
-		.din(adc_din),
+		.sclk(spi_sclk),
+		.din(spi_sdo),
 		.dout(dout_sync)
 	);
 
@@ -123,7 +123,7 @@ module afe_frontend #(
 		.rst(rst),
 		.cfg(loopback_cfg),
 		.value(loopback_value),
-		.sclk(adc_sclk),
+		.sclk(spi_sclk),
 		.dout(emu_dout),
 		.words(emu_words)
 	);

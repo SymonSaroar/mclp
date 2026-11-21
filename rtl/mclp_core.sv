@@ -49,12 +49,13 @@ module mclp_core #(
 	output wire         m_axis_raw_tvalid,
 	input  wire         m_axis_raw_tready,
 
-	// AD7190 chips (shared SCLK/DIN/CS/SYNC, one DOUT per chip)
-	output wire         adc_sclk,
-	output wire         adc_din,
-	output wire         adc_cs_n,
+	// SPI master to the AD7190 chips: spi_sdo to DIN, spi_sdi[k] from DOUT/RDY of chip k; SCLK, DIN, CS
+	// and SYNC shared by all chips
+	output wire         spi_sclk,
+	output wire         spi_sdo,
+	output wire         spi_cs_n,
 	output wire         adc_sync_n,
-	input  wire [N_CH-1:0] adc_dout
+	input  wire [N_CH-1:0] spi_sdi
 );
 
 	// Resets, each from its synchronizer, active low
@@ -253,11 +254,11 @@ module mclp_core #(
 		.seq_q(spi_seq_data),
 		.seq_busy(spi_seq_busy),
 		.seq_resp(spi_seq_resp),
-		.adc_sclk(adc_sclk),
-		.adc_din(adc_din),
-		.adc_cs_n(adc_cs_n),
+		.spi_sclk(spi_sclk),
+		.spi_sdo(spi_sdo),
+		.spi_cs_n(spi_cs_n),
 		.adc_sync_n(adc_sync_n),
-		.adc_dout(adc_dout),
+		.spi_sdi(spi_sdi),
 		.m_valid(fe_tvalid),
 		.m_ready(fe_tready),
 		.m_data(fe_tdata),

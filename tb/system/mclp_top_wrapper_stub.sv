@@ -32,11 +32,11 @@ module mclp_top_wrapper #(
 	inout  wire            FIXED_IO_ps_clk,
 	inout  wire            FIXED_IO_ps_porb,
 	inout  wire            FIXED_IO_ps_srstb,
-	output wire            adc_sclk,
-	output wire            adc_din,
-	output wire            adc_cs_n,
+	output wire            spi_sclk,
+	output wire            spi_sdo,
+	output wire            spi_cs_n,
 	output wire            adc_sync_n,
-	input  wire [N_CH-1:0] adc_dout
+	input  wire [N_CH-1:0] spi_sdi
 );
 	reg clk  = 1'b0;
 	reg rstn = 1'b0;
@@ -131,10 +131,10 @@ module mclp_top_wrapper #(
 		.m_axis_raw_tlast(raw_tlast),
 		.m_axis_raw_tvalid(raw_tvalid),
 		.m_axis_raw_tready(1'b1),
-		.adc_sclk(adc_sclk),
-		.adc_din(adc_din),
-		.adc_cs_n(adc_cs_n),
+		.spi_sclk(spi_sclk),
+		.spi_sdo(spi_sdo),
+		.spi_cs_n(spi_cs_n),
 		.adc_sync_n(adc_sync_n),
-		.adc_dout(adc_dout)
+		.spi_sdi(spi_sdi)
 	);
 endmodule

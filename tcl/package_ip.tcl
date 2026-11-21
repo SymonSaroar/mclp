@@ -84,7 +84,7 @@ set blk [ipx::get_address_blocks reg0 -of_objects $mm]
 if {$blk eq ""} { set blk [ipx::add_address_block reg0 $mm] }
 set_property -dict {range 4096 width 32 usage register} $blk
 
-# N_CH: 1 to 64 AD7190 chips; adc_dout is N_CH bits wide
+# N_CH: 1 to 64 AD7190 chips; spi_sdi is N_CH bits wide
 set_property -dict [list \
 	display_name                  {Channels (AD7190 chips, one per load cell)} \
 	value                         8 \
