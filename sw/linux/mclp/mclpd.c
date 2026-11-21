@@ -1,7 +1,7 @@
 /*
  * mclpd: the MCLP network service. REST over HTTPS and MQTT over TLS, on top of the console code in sw/common.
  *
- *   mclpd [-c /etc/mclp/mclpd.conf]
+ *   mclpd [-c /etc/mclp/mclpd.conf] [--sim HOST:PORT]
  *
  * REST (HTTP basic authentication over HTTPS; accounts in /etc/mclp/users, one "name:role:hash" per line,
  * role viewer or operator, hash from `openssl passwd -6`):
@@ -514,20 +514,26 @@ static void mqtt_start(void)
 
 int main(int argc, char **argv)
 {
-	const char *conf = "/etc/mclp/mclpd.conf";
+	const char *conf = "/etc/mclp/mclpd.conf", *sim = NULL;
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-c") && i + 1 < argc)
 			conf = argv[++i];
+		else if (!strcmp(argv[i], "--sim") && i + 1 < argc)
+			sim = argv[++i];
 		else {
-			fprintf(stderr, "usage: mclpd [-c config]\n");
+			fprintf(stderr, "usage: mclpd [-c config] [--sim HOST:PORT]\n");
 			return 2;
 		}
 	}
 	conf_load(conf);
-	if (uio_open())
+	if (sim ? sim_open(sim) : uio_open())
 		return 3;
-	hw = &uio_backend;
-	uio_backend.getc = no_key;
+	hw = sim ? &sim_backend : &uio_backend;
+	if (sim) {                                    /* the server takes one request at a time */
+		sim_backend.lock = uio_lock;
+		sim_backend.unlock = uio_unlock;
+	}
+	sim_backend.getc = uio_backend.getc = no_key;
 
 	uint32_t id;
 	hw->lock();

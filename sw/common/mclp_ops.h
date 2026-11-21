@@ -1,6 +1,6 @@
 /*
- * Register-level operations shared by the bare-metal console and the Linux console, on top of a small
- * platform backend. Every register access goes through reg_rd/reg_wr/mem_rd/
+ * Register-level operations shared by the bare-metal console, the Linux console and the co-simulation
+ * client, on top of a small platform backend. Every register access goes through reg_rd/reg_wr/mem_rd/
  * mem_wr, which print a decoded trace line (with the equivalent devmem command) when trace is on.
  */
 #ifndef MCLP_OPS_H
@@ -15,7 +15,7 @@ typedef struct {
 	const char *name;
 	uint32_t (*rd)(uint32_t addr);                /* absolute bus address */
 	void     (*wr)(uint32_t addr, uint32_t v);
-	uint64_t (*now_us)(void);                     /* monotonic microseconds */
+	uint64_t (*now_us)(void);                     /* simulation time in co-simulation */
 	void     (*delay_us)(uint32_t us);
 	int      (*getc)(void);                       /* -1 when no key is waiting */
 	int      (*store)(const void *p, unsigned n); /* calibration record: 0, or <0 on error */
