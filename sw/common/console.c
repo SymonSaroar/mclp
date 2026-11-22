@@ -51,6 +51,8 @@ static double user_to_counts(double v)  /* kg once spanned, counts before */
 
 static const char *unit(void) { return spanned() ? "kg" : "counts"; }
 
+static int nn_present(void) { return reg_rd(REG_NN_STATUS) != READ_BAD; }
+
 static int32_t clamp32(double v)
 {
 	return v >= 2147483647.0 ? 0x7FFFFFFF : v <= -2147483648.0 ? (int32_t)0x80000000 : (int32_t)lround(v);
@@ -91,6 +93,8 @@ static void cal_apply(void)
 	reg_wr(REG_RESULT_DECIM, cal.decim);
 	wim_apply();
 	fir_apply(cal.fir_fc);
+	if (nn_present())
+		reg_wr(REG_NN_CTRL, cal.nn_enable);
 }
 
 static void cal_load_or_defaults(int verbose)
@@ -190,6 +194,130 @@ static void print_wim(void)
 	printf(" from %u samples (%.2f s of plateau)\n", (unsigned)n, n / CIC_RATE_HZ);
 }
 
+/* ------------------------------------------------------------------ inference engine */
+
+static const struct { const char *name; unsigned base, words, off; } NN_MEM[] = {   /* off: into nn_all */
+	{ "layers", REG_NN_LAYER(0), 64, 0 }, { "bias", REG_NN_BIAS(0), 256, 64 },
+	{ "weights", REG_NN_WEIGHT(0), 4096, 320 },
+};
+static char     nn_text[45000];        /* one .mem file: up to 4096 lines of 8 hex digits */
+static uint32_t nn_all[64 + 256 + 4096];
+
+static uint32_t crc32_word(uint32_t crc, uint32_t w)
+{
+	for (int i = 0; i < 4; i++) {
+		crc ^= (w >> (8 * i)) & 0xFFu;
+		for (int b = 0; b < 8; b++)
+			crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+	}
+	return crc;
+}
+
+/* CRC-32 of the three model memories as read back, and the number of layers up to the one marked last
+ * (0 if none is) */
+static uint32_t nn_crc(int *layers)
+{
+	uint32_t crc = 0xFFFFFFFFu;
+	int t = trace, done = 0;
+	step("nn: read back the layer list, biases and weights");
+	trace = 0;
+	*layers = 0;
+	for (unsigned m = 0; m < 3; m++)
+		for (unsigned i = 0; i < NN_MEM[m].words; i++) {
+			uint32_t w = reg_rd(NN_MEM[m].base + 4u * i);
+			crc = crc32_word(crc, w);
+			if (m == 0 && i % 4u == 0u && !done) {
+				++*layers;
+				done = (w >> 31) != 0;
+			}
+		}
+	trace = t;
+	if (!done)
+		*layers = 0;
+	return ~crc;
+}
+
+/* <prefix>_<name>.mem: hex words, one per line as $readmemh reads them. Word count, or -1. */
+static int nn_read_mem(const char *prefix, unsigned m, uint32_t *out)
+{
+	char path[200], *s = nn_text, *e;
+	snprintf(path, sizeof path, "%s_%s.mem", prefix, NN_MEM[m].name);
+	int n = hw->read_file(path, nn_text, sizeof nn_text - 1);
+	if (n < 0) {
+		printf("cannot read %s\n", path);
+		return -1;
+	}
+	nn_text[n] = 0;
+	unsigned k = 0;
+	for (;;) {
+		while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+			s++;
+		if (!*s)
+			return (int)k;
+		unsigned long v = strtoul(s, &e, 16);
+		if (e == s || v > 0xFFFFFFFFul) {
+			printf("%s: word %u is not a 32-bit hex number\n", path, k);
+			return -1;
+		}
+		if (k == NN_MEM[m].words) {
+			printf("%s: more than %u words\n", path, NN_MEM[m].words);
+			return -1;
+		}
+		out[k++] = (uint32_t)v;
+		s = e;
+	}
+}
+
+/* Reads all three files, then writes them with the engine stopped and reads them back. 0, or -1. */
+static int nn_load(const char *prefix)
+{
+	int bad = 0;
+	if (!hw->read_file) {
+		printf("this backend cannot read files\n");
+		return -1;
+	}
+	for (unsigned m = 0; m < 3; m++) {
+		int n = nn_read_mem(prefix, m, nn_all + NN_MEM[m].off);
+		if (n < 0)
+			return -1;
+		memset(nn_all + NN_MEM[m].off + n, 0, (NN_MEM[m].words - (unsigned)n) * sizeof nn_all[0]);
+	}
+	uint32_t en = reg_rd(REG_NN_CTRL) & 1u;
+	step("nn load: stop the engine, write the layer list, biases and weights, read them back");
+	reg_wr(REG_NN_CTRL, 0);
+	uint32_t t0 = ms_now();
+	while ((reg_rd(REG_NN_STATUS) & 1u) && ms_now() - t0 < 10)
+		delay_ms(1);
+	int t = trace;
+	trace = 0;
+	for (unsigned m = 0; m < 3; m++)
+		for (unsigned i = 0; i < NN_MEM[m].words; i++)
+			reg_wr(NN_MEM[m].base + 4u * i, nn_all[NN_MEM[m].off + i]);
+	for (unsigned m = 0; m < 3; m++)
+		for (unsigned i = 0; i < NN_MEM[m].words; i++)
+			bad += reg_rd(NN_MEM[m].base + 4u * i) != nn_all[NN_MEM[m].off + i];
+	trace = t;
+	reg_wr(REG_NN_CTRL, en);
+	if (bad) {
+		printf("%d model words read back wrong\n", bad);
+		return -1;
+	}
+	return 0;
+}
+
+static void print_nn(void)
+{
+	uint32_t seq = reg_rd(REG_NN_SEQ);
+	if (!seq || seq == READ_BAD) {
+		printf("no inference result yet\n");
+		return;
+	}
+	printf("inference %u:", (unsigned)seq);
+	print_weight((int32_t)reg_rd(REG_NN_EST));
+	printf(", correction %+.2f%% of the weigh-in-motion result, %.0f us\n",
+	       (int32_t)reg_rd(REG_NN_CORR) / 1048576.0 * 100.0, reg_rd(REG_NN_CYCLES) / DSP_CLK_MHZ);
+}
+
 /* ------------------------------------------------------------------ commands */
 
 static void cmd_help(int argc, char **argv);
@@ -241,13 +369,17 @@ static void cmd_live(int argc, char **argv)
 	(void)argc; (void)argv;
 	uint32_t seq = reg_rd(REG_RESULT_SEQ), t_print = 0;
 	printf("live weight at 10 Hz; any key stops\n");
-	reg_wr(REG_IRQ_STATUS, IRQ_WIM | IRQ_FAULT);
+	reg_wr(REG_IRQ_STATUS, IRQ_WIM | IRQ_FAULT | IRQ_NN_DONE);
 	while (!key_pressed()) {
 		uint32_t irq = reg_rd(REG_IRQ_STATUS);
 		if (irq & IRQ_WIM) {
 			reg_wr(REG_IRQ_STATUS, IRQ_WIM);
 			printf("\n");
 			print_wim();
+		}
+		if (irq & IRQ_NN_DONE) {
+			reg_wr(REG_IRQ_STATUS, IRQ_NN_DONE);
+			print_nn();
 		}
 		if (irq & IRQ_FAULT) {
 			reg_wr(REG_IRQ_STATUS, IRQ_FAULT);
@@ -523,6 +655,37 @@ static void cmd_wim(int argc, char **argv)
 		       spanned() ? cal.wim_enter * cal.kg_per_count : cal.wim_enter, unit(),
 		       spanned() ? cal.wim_exit * cal.kg_per_count : cal.wim_exit, unit(), cal.wim_level / 65536.0);
 	print_wim();
+	if (nn_present())
+		print_nn();
+}
+
+static void cmd_nn(int argc, char **argv)
+{
+	if (!nn_present()) {
+		printf("no inference engine in this bitstream (USE_NN = 0)\n");
+		failed = 1;
+		return;
+	}
+	if (argc == 2 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) {
+		cal.nn_enable = !strcmp(argv[1], "on");
+		reg_wr(REG_NN_CTRL, cal.nn_enable);
+	} else if (argc >= 2 && argc <= 3 && !strcmp(argv[1], "load")) {
+		const char *p = argc == 3 ? argv[2] : hw->nn_model;
+		if (!p || nn_load(p)) {
+			failed = 1;
+			return;
+		}
+		printf("model loaded from %s_layers.mem, _bias.mem, _weights.mem\n", p);
+	} else if (argc > 1) {
+		printf("usage: nn [on | off | load [prefix]]\n");
+		failed = 1;
+		return;
+	}
+	int layers;
+	uint32_t crc = nn_crc(&layers);
+	printf("inference engine %s%s; model: %d layer%s, CRC-32 %08X\n", reg_rd(REG_NN_CTRL) & 1u ? "on" : "off",
+	       reg_rd(REG_NN_STATUS) & 1u ? ", busy" : "", layers, layers == 1 ? "" : "s", (unsigned)crc);
+	print_nn();
 }
 
 static void cmd_decim(int argc, char **argv)
@@ -762,6 +925,12 @@ static void cmd_init(int argc, char **argv)
 	if (platform_check())
 		return;
 	cal_load_or_defaults(1);
+	if (nn_present() && hw->read_file && hw->nn_model) {
+		char path[200];
+		snprintf(path, sizeof path, "%s_layers.mem", hw->nn_model);
+		if (hw->read_file(path, nn_text, sizeof nn_text - 1) >= 0 && !nn_load(hw->nn_model))
+			printf("inference model loaded from %s_*.mem\n", hw->nn_model);
+	}
 	cal_apply();
 	adc_init();
 }
@@ -780,8 +949,8 @@ static void cmd_rd(int argc, char **argv)
 		return;
 	}
 	uint32_t a = (uint32_t)strtoul(argv[1], NULL, 0);
-	uint32_t v = a < 0x1000u ? reg_rd(a) : mem_rd(a);
-	printf("%08X: %08X (%ld)\n", (unsigned)(a < 0x1000u ? MCLP_BASE + a : a), (unsigned)v, (long)(int32_t)v);
+	uint32_t v = a < 0x10000u ? reg_rd(a) : mem_rd(a);
+	printf("%08X: %08X (%ld)\n", (unsigned)(a < 0x10000u ? MCLP_BASE + a : a), (unsigned)v, (long)(int32_t)v);
 }
 
 static void cmd_wr(int argc, char **argv)
@@ -791,7 +960,7 @@ static void cmd_wr(int argc, char **argv)
 		return;
 	}
 	uint32_t a = (uint32_t)strtoul(argv[1], NULL, 0), v = (uint32_t)strtoul(argv[2], NULL, 0);
-	if (a < 0x1000u)
+	if (a < 0x10000u)
 		reg_wr(a, v);
 	else
 		mem_wr(a, v);
@@ -811,6 +980,7 @@ static const struct {
 	{ "cal",      "[sub]",                   "zero | corner <i> | solve <kg> | span <kg> | reset | save | load", cmd_cal },
 	{ "stab",     "[band samples]",          "stability window (band in kg once spanned)", cmd_stab },
 	{ "wim",      "[enter exit level|off]", "weigh-in-motion thresholds and last result", cmd_wim },
+	{ "nn",       "[on|off|load [prefix]]",  "inference engine: state, model, last result", cmd_nn },
 	{ "decim",    "[n]",                     "RESULT rate = 600 Hz / n", cmd_decim },
 	{ "fir",      "[hz]",                    "FIR low-pass cutoff, 0.5 to 37 Hz", cmd_fir },
 	{ "raw",      "<tap> <n>",               "capture n records through the DMA and print them", cmd_raw },
@@ -908,6 +1078,11 @@ void console_reading(reading_t *r)
 	r->wim_sum   = ((uint64_t)reg_rd(REG_WIM_SUM_HI) << 32) | reg_rd(REG_WIM_SUM_LO);
 	r->wim_n     = reg_rd(REG_WIM_COUNT);
 	r->wim_value = r->wim_n ? net_value((double)(int64_t)r->wim_sum / r->wim_n) : 0.0;
+	r->nn_seq    = reg_rd(REG_NN_SEQ);
+	if (r->nn_seq == READ_BAD)
+		r->nn_seq = 0;
+	r->nn_value  = r->nn_seq ? net_value((int32_t)reg_rd(REG_NN_EST)) : 0.0;
+	r->nn_corr   = r->nn_seq ? (int32_t)reg_rd(REG_NN_CORR) / 1048576.0 : 0.0;
 	hw_unlock();
 	trace = t;
 }

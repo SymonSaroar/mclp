@@ -49,6 +49,16 @@ int file_fetch(void *p, unsigned n)
 	return r == n ? 0 : -2;
 }
 
+int file_read(const char *path, char *buf, unsigned max)
+{
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return -1;
+	size_t r = fread(buf, 1, max, f);
+	fclose(f);
+	return (int)r;
+}
+
 /* ------------------------------------------------------------------ UIO */
 
 static volatile uint32_t *uio_regs, *uio_dma;
@@ -138,7 +148,7 @@ void uio_unlock(void)
 backend_t uio_backend = {
 	.name = "Linux UIO", .rd = uio_rd, .wr = uio_wr, .now_us = uio_now_us, .delay_us = uio_delay_us,
 	.store = file_store, .fetch = file_fetch, .store_name = "/etc/mclp/mclp.cal", .barrier = uio_barrier,
-	.lock = uio_lock, .unlock = uio_unlock,
+	.lock = uio_lock, .unlock = uio_unlock, .read_file = file_read, .nn_model = "/etc/mclp/nn",
 };
 
 int uio_open(void)

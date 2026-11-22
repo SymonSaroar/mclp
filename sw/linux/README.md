@@ -188,6 +188,7 @@ file at every start. The bare-metal console takes the same commands and saves wi
 | `cal ...` | Calibration, below |
 | `stab <band> <samples>` | Stability window; band in kg once spanned |
 | `wim <enter> <exit> <level>`, `wim off` | Weigh-in-motion thresholds in kg above zero and the share of the peak (0 to 1) that counts; without arguments, the last result |
+| `nn`, `nn on`, `nn off`, `nn load [prefix]` | Inference engine: state, model (layers, CRC-32 of the model memories) and last result; on or off after each weigh-in-motion result; load a model, below |
 | `decim <n>`, `fir <hz>` | RESULT rate 600/n Hz; FIR low-pass cutoff, 0.5 to 37 Hz |
 | `raw <tap> <n>` | Capture n records through the DMA (tap 0 ADC code, 1 CIC, 2 gain/offset, 3 trim), print CSV |
 | `faults`, `faults clear` | Sticky flags per channel: ERR, NOREF, PARITY, STALE, MISMATCH |
@@ -196,7 +197,7 @@ file at every start. The bare-metal console takes the same commands and saves wi
 | `bist` | PL loopback: bit-exact data on all lanes, injected ERR on each channel, injected parity error |
 | `info` | Software version, addresses, calibration file |
 | `trace on`, `trace off` | Print every register access, decoded, with the equivalent `devmem` command |
-| `rd <addr>`, `wr <addr> <value>` | Register access. An address below 0x1000 is an offset from 0x43C0_0000. |
+| `rd <addr>`, `wr <addr> <value>` | Register access. An address below 0x10000 is an offset from 0x43C0_0000. |
 
 At boot, `/etc/init.d/mclp` runs `mclp init`: ID check, calibration load, AD7190 power-up list. The root file
 system is ext4 on the SD card's second partition (`/dev/mmcblk0p2`). With INITRD instead (`petalinux-config`
@@ -240,6 +241,12 @@ commands to `mclpd`. The corner steps keep their measurements in the program's m
   as stable.
 - `wim <enter> <exit> <level>`: weigh-in-motion. A load passing over the platform is averaged over the weights
   at or above `level` times its peak (0.93 at reset) and reported in `live` and `wim`.
+- `nn on`: the inference engine corrects each weigh-in-motion result; `live`, `wim` and `nn` show the corrected
+  estimate and the correction. The setting is saved with the calibration.
+- `nn load [prefix]`: loads a model from `<prefix>_layers.mem`, `<prefix>_bias.mem` and `<prefix>_weights.mem`,
+  hex words in the format of `coeff/nn_*.mem`; without a prefix, from `/etc/mclp/nn_*.mem`. `mclp init` loads
+  `/etc/mclp/nn_*.mem` at boot when they exist; otherwise the bitstream's default model stays. The default
+  model is for single axles on a 0.75 m platform with 8 cells.
 - `fir <hz>`: a lower cutoff gives less noise and a slower response. `decim <n>`: RESULT rate.
 - `raw <tap> <n>`: per-channel data for analysis. `raw 1 600` records one second after the CIC.
 
@@ -277,7 +284,7 @@ sudo chmod 600 /etc/mclp/users
 ```
 
 A viewer reads the weight, faults and settings, and runs the reporting commands: `status`, `info`, `w`, and
-`wim`, `faults`, `stab`, `decim`, `fir`, `cal show` without arguments. An operator runs every command.
+`wim`, `nn`, `faults`, `stab`, `decim`, `fir`, `cal show` without arguments. An operator runs every command.
 mclpd reads the file on every request. Without accounts, REST answers 401.
 
 ### Certificate
@@ -292,9 +299,9 @@ Port 443.
 
 | Request | Answer | Role |
 |---|---|---|
-| `GET /api/v1/weight` | `{"value":12.345,"unit":"kg","stable":true,"overload":false,"seq":..,"time_ms":..,"wim":{..}}` | viewer |
+| `GET /api/v1/weight` | `{"value":12.345,"unit":"kg","stable":true,"overload":false,"seq":..,"time_ms":..,"wim":{..},"nn":{..}}` | viewer |
 | `GET /api/v1/faults` | `{"channels":[[],["ERR"],..],"any":true}` | viewer |
-| `GET /api/v1/settings` | Calibration, FIR, decimation, stability and weigh-in-motion settings | viewer |
+| `GET /api/v1/settings` | Calibration, FIR, decimation, stability, weigh-in-motion and inference (`"nn":{"enabled":..}`) settings | viewer |
 | `POST /api/v1/cmd` with `{"cmd":"<command>"}` | `{"cmd":..,"ok":true,"output":"<console output>"}` | viewer for the reporting commands, else operator |
 
 ```sh
@@ -328,8 +335,9 @@ server and a set RTC, the connection fails with "A TLS error occurred". mclpd re
 
 | Topic | Payload |
 |---|---|
-| `mclp/<device>/weight` | As `GET /api/v1/weight` without `wim`, on each RESULT update, at most `publish_hz` per second (QoS 0) |
+| `mclp/<device>/weight` | As `GET /api/v1/weight` without `wim` and `nn`, on each RESULT update, at most `publish_hz` per second (QoS 0) |
 | `mclp/<device>/wim` | `{"value":..,"unit":"kg","samples":..,"seconds":..}` per weigh-in-motion result (QoS 1) |
+| `mclp/<device>/inference` | `{"value":..,"unit":"kg","correction":..,"seq":..}` per inference: the corrected weigh-in-motion estimate and the correction as a fraction (QoS 1) |
 | `mclp/<device>/faults` | As `GET /api/v1/faults`, on change (QoS 1, retained) |
 | `mclp/<device>/status` | `online`; `offline` when mclpd stops or loses the connection (QoS 1, retained) |
 | `mclp/<device>/cmd` | Publish a console command line here, for example `tare` or `cal corner 3` |

@@ -12,6 +12,8 @@
 #define FIR_TAPS          64
 #define SEQ_WORDS         256
 #define CIC_RATE_HZ       600.0         /* 4800 SPS / 8 */
+#define DSP_CLK_MHZ       50.0          /* clk_dsp in the reference design */
+#define READ_BAD          0x0BAD0BADu   /* unmapped address or absent block */
 #define FPGA_ID_MAP       0x4D4C0500u   /* "ML" (MCLP), register map version 5; [7:0] channels */
 #define ID_CHANNELS(id)   ((unsigned)(id) & 0xFFu)
 

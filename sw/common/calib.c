@@ -34,6 +34,7 @@ void cal_defaults(cal_t *c, int n_ch)
 	c->wim_enter  = 0x7FFFFFFF;
 	c->wim_exit   = 0x7FFFFFFF;
 	c->wim_level  = 0xEE14;        /* 0.93 */
+	c->nn_enable  = 0;
 	c->decim      = 12;
 	c->fir_fc     = 12.0;
 	c->sum        = cal_checksum(c);

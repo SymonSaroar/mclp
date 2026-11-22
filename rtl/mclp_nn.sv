@@ -90,6 +90,10 @@ module mclp_nn (
 	reg  [10:0]        act_wa = 11'd0;
 	reg  signed [7:0]  act_wd = 8'sd0;
 
+	// Zero at configuration, as the block RAM powers up: a window in the first 1.7 s holds zeros before the weights
+	integer ri;
+	initial for (ri = 0; ri < 1024; ri = ri + 1) ring[ri] = 32'sd0;
+
 	always @(posedge clk) begin
 		if (s_valid) begin
 			ring[rp] <= s_data;
