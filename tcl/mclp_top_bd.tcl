@@ -136,7 +136,7 @@ xilinx.com:ip:axi_dma:7.1\
 xilinx.com:ip:xlconcat:2.1\
 xilinx.com:ip:smartconnect:1.0\
 xilinx.com:ip:clk_wiz:6.0\
-mclp:ip:mclp_core:1.0\
+mclp:ip:mclp_core:2.0\
 "
 
    set list_ips_missing ""
@@ -556,7 +556,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: mclp_core_0, and set properties
-  set mclp_core_0 [ create_bd_cell -type ip -vlnv mclp:ip:mclp_core:1.0 mclp_core_0 ]
+  set mclp_core_0 [ create_bd_cell -type ip -vlnv mclp:ip:mclp_core:2.0 mclp_core_0 ]
   set_property CONFIG.N_CH {8} $mclp_core_0
 
 
