@@ -204,7 +204,7 @@ system is ext4 on the SD card's second partition (`/dev/mmcblk0p2`). With INITRD
 
 ### First start
 
-1. `status`: ID `4D4C0408` (register map version 4, 8 channels), clocks locked, sequencer streaming.
+1. `status`: ID `4D4C0508` (register map version 5, 8 channels), clocks locked, sequencer streaming.
 2. `bist`: the loopback emulator replaces the DOUT lines. The test checks the capture path bit for bit, then
    the fault flags of every channel. A failure points at the FPGA image.
 3. `selftest`, per channel: `OPEN` is full scale with the burnout currents on (broken cable or load cell).

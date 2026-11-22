@@ -2,12 +2,14 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // mclp_registers
-// Register file. ADDRESS SPACE: 0x43C0_0000 -> 0x43C0_0FFF (GP0).
+// Register file. ADDRESS SPACE: 64 KB (0x43C0_0000 -> 0x43C0_FFFF on GP0 in the reference design): the
+// registers and memories at 0x0000 to 0x0FFF, the inference engine's registers at 0x1000, its layer list at
+// 0x2000, biases at 0x3000 and weights at 0x4000 to 0x7FFF (USE_NN = 1; otherwise those read 0x0BAD_0BAD).
 //
 // Registers live in s_axi_aclk. Every signal to or from another clock domain crosses here through an
 // XPM macro: control to clk_spi and clk_dsp (SYNC OUT), status back to s_axi_aclk (SYNC IN).
-// Coefficient, FIR and sequencer memories are xpm_memory_tdpram: port A on the AXI side, port B read
-// by the consumer in its own clock.
+// Coefficient, FIR, sequencer and model memories are xpm_memory_tdpram: port A on the AXI side, port B read
+// by the consumer in its own clock. Software writes a model only while NN_CTRL.enable is 0.
 //
 // To add a register: an address constant, a reg with its reset value, one line in the write case,
 // one line in the read case, and the output assignment (through SYNC OUT if it leaves s_axi_aclk).
@@ -16,12 +18,16 @@ module mclp_registers #(
 		parameter integer N_CH    = 8,
 		parameter FIR_INIT_FILE  = "fir64.mem",
 		parameter SEQ_INIT_FILE  = "seq_init.mem",
-		parameter UNITY_INIT_FILE = "unity64.mem"
+		parameter UNITY_INIT_FILE = "unity64.mem",
+		parameter integer USE_NN  = 1,
+		parameter NN_LAYERS_INIT_FILE  = "nn_layers.mem",
+		parameter NN_BIAS_INIT_FILE    = "nn_bias.mem",
+		parameter NN_WEIGHTS_INIT_FILE = "nn_weights.mem"
 	) (
 		// AXI4-Lite Interface (s_axi_aclk)
 		input  wire          s_axi_aclk,
 		input  wire          s_axi_aresetn,
-		input  wire [11:0]   s_axi_awaddr,
+		input  wire [15:0]   s_axi_awaddr,
 		input  wire [2:0]    s_axi_awprot,
 		input  wire          s_axi_awvalid,
 		output wire          s_axi_awready,
@@ -32,7 +38,7 @@ module mclp_registers #(
 		output wire [1:0]    s_axi_bresp,
 		output wire          s_axi_bvalid,
 		input  wire          s_axi_bready,
-		input  wire [11:0]   s_axi_araddr,
+		input  wire [15:0]   s_axi_araddr,
 		input  wire [2:0]    s_axi_arprot,
 		input  wire          s_axi_arvalid,
 		output wire          s_axi_arready,
@@ -89,7 +95,19 @@ module mclp_registers #(
 		input  wire          dsp_overload,
 		input  wire          dsp_reload_busy,
 		input  wire          dsp_capture_active,
-		input  wire [5*N_CH-1:0] dsp_faults
+		input  wire [5*N_CH-1:0] dsp_faults,
+		output wire          dsp_nn_enable,
+		input  wire [5:0]    dsp_nn_lay_addr,
+		output wire [31:0]   dsp_nn_lay_q,
+		input  wire [7:0]    dsp_nn_bias_addr,
+		output wire [31:0]   dsp_nn_bias_q,
+		input  wire [11:0]   dsp_nn_wt_addr,
+		output wire [31:0]   dsp_nn_wt_q,
+		input  wire          dsp_nn_done,
+		input  wire [31:0]   dsp_nn_est,
+		input  wire [31:0]   dsp_nn_corr,
+		input  wire [31:0]   dsp_nn_cycles,
+		input  wire          dsp_nn_busy
 	);
 
 	//Registers-address----------------------------------------------------------------------------------
@@ -113,6 +131,12 @@ module mclp_registers #(
 	localparam [11:0] REG_RW_0021 = 12'h054;   // LOOPBACK_CFG
 	localparam [11:0] REG_RW_0022 = 12'h058;   // LOOPBACK_VALUE
 	localparam [11:0] REG_RW_0023 = 12'h05C;   // WIM_LEVEL
+	localparam [15:0] REG_NN_CTRL   = 16'h1000;
+	localparam [15:0] REG_NN_STATUS = 16'h1004;
+	localparam [15:0] REG_NN_SEQ    = 16'h1008;
+	localparam [15:0] REG_NN_EST    = 16'h100C;
+	localparam [15:0] REG_NN_CORR   = 16'h1010;
+	localparam [15:0] REG_NN_CYCLES = 16'h1014;
 	//Memory-windows-------------------------------------------------------------------------------------
 	localparam [11:0] MEM_FIR     = 12'h200;   // 0x200-0x2FC, 64 words, reload order
 	localparam [11:0] MEM_SEQ     = 12'h400;   // 0x400-0x7FC, 256 words
@@ -123,34 +147,45 @@ module mclp_registers #(
 	localparam [11:0] MEM_OFFSET  = 12'hA00;
 	localparam [11:0] MEM_TRIM    = 12'hB00;   // Q2.30
 	localparam [11:0] MEM_FAULT   = 12'hC00;   // sticky FLT bits [4:0]
+	// Model memories, USE_NN = 1
+	localparam [15:0] MEM_NN_LAY  = 16'h2000;  // 0x2000-0x20FC, 64 layer words
+	localparam [15:0] MEM_NN_BIAS = 16'h3000;  // 0x3000-0x33FC, 256 biases
+	localparam [15:0] MEM_NN_WT   = 16'h4000;  // 0x4000-0x7FFC, 4096 words of four int8 weights
 	//---------------------------------------------------------------------------------------------------
 	localparam [7:0]  N_CH_ID     = N_CH;
-	localparam [31:0] FPGA_ID     = {16'h4D4C, 8'h04, N_CH_ID};   // "ML" (MCLP), register map version 4, channels
+	localparam [31:0] FPGA_ID     = {16'h4D4C, 8'h05, N_CH_ID};   // "ML" (MCLP), register map version 5, channels
 	localparam [31:0] READ_BAD    = 32'h0BAD_0BAD;
 
-	localparam [2:0] SEL_REG    = 3'd0;
-	localparam [2:0] SEL_GAIN   = 3'd1;
-	localparam [2:0] SEL_OFFSET = 3'd2;
-	localparam [2:0] SEL_TRIM   = 3'd3;
-	localparam [2:0] SEL_FIR    = 3'd4;
-	localparam [2:0] SEL_SEQ    = 3'd5;
+	localparam [3:0] SEL_REG     = 4'd0;
+	localparam [3:0] SEL_GAIN    = 4'd1;
+	localparam [3:0] SEL_OFFSET  = 4'd2;
+	localparam [3:0] SEL_TRIM    = 4'd3;
+	localparam [3:0] SEL_FIR     = 4'd4;
+	localparam [3:0] SEL_SEQ     = 4'd5;
+	localparam [3:0] SEL_NN_LAY  = 4'd6;
+	localparam [3:0] SEL_NN_BIAS = 4'd7;
+	localparam [3:0] SEL_NN_WT   = 4'd8;
 
 	//Register-port--------------------------------------------------------------------------------------
 	wire        bram_en_a;
 	wire [3:0]  bram_we_a;
-	wire [11:0] bram_addr_a;
+	wire [15:0] bram_addr_a;
 	wire [31:0] bram_wrdata_a;
 	reg  [31:0] bram_rddata_a;
 	wire        bram_wr = bram_en_a && (bram_we_a == 4'hF);
 	wire        bram_rd = bram_en_a && (bram_we_a == 4'h0);
 
-	wire hit_gain   = bram_addr_a[11:8]  == MEM_GAIN[11:8];
-	wire hit_offset = bram_addr_a[11:8]  == MEM_OFFSET[11:8];
-	wire hit_trim   = bram_addr_a[11:8]  == MEM_TRIM[11:8];
-	wire hit_fir    = bram_addr_a[11:8]  == MEM_FIR[11:8];
-	wire hit_seq    = bram_addr_a[11:10] == MEM_SEQ[11:10];
-	wire hit_resp   = bram_addr_a[11:8]  == MEM_RESP[11:8];
-	wire hit_fault  = bram_addr_a[11:8]  == MEM_FAULT[11:8];
+	wire page0       = bram_addr_a[15:12] == 4'h0;
+	wire hit_gain    = page0 && bram_addr_a[11:8]  == MEM_GAIN[11:8];
+	wire hit_offset  = page0 && bram_addr_a[11:8]  == MEM_OFFSET[11:8];
+	wire hit_trim    = page0 && bram_addr_a[11:8]  == MEM_TRIM[11:8];
+	wire hit_fir     = page0 && bram_addr_a[11:8]  == MEM_FIR[11:8];
+	wire hit_seq     = page0 && bram_addr_a[11:10] == MEM_SEQ[11:10];
+	wire hit_resp    = page0 && bram_addr_a[11:8]  == MEM_RESP[11:8];
+	wire hit_fault   = page0 && bram_addr_a[11:8]  == MEM_FAULT[11:8];
+	wire hit_nn_lay  = USE_NN && bram_addr_a[15:8]  == MEM_NN_LAY[15:8];
+	wire hit_nn_bias = USE_NN && bram_addr_a[15:10] == MEM_NN_BIAS[15:10];
+	wire hit_nn_wt   = USE_NN && bram_addr_a[15:14] == MEM_NN_WT[15:14];
 	wire [5:0] idx  = bram_addr_a[7:2];      // channel in a per-channel block
 
 	//Registers------------------------------------------------------------------------------------------
@@ -175,17 +210,24 @@ module mclp_registers #(
 	reg  [31:0] reg_loopback_cfg   = {16'd4166, 16'd0};   // frame period: 20 MHz / 4800
 	reg  [31:0] reg_loopback_value = 32'h0012_3456;
 	reg  [31:0] reg_rddata         = 32'd0;
-	reg  [2:0]  rd_sel             = SEL_REG;
+	reg  [3:0]  rd_sel             = SEL_REG;
+	reg         reg_nn_enable      = 1'b0;            // off until software has loaded a model
 
 	//Status (s_axi_aclk)--------------------------------------------------------------------------------
 	wire         locked_axi, seq_busy_axi;
 	wire [32*N_CH-1:0] seq_resp_axi;
-	wire [3:0]   dsp_levels_axi;     // {capture_active, stable, overload, reload_busy}
+	wire [4:0]   dsp_levels_axi;     // {nn_busy, capture_active, stable, overload, reload_busy}
 	wire [5*N_CH-1:0]  faults_axi;
 	wire         result_valid, wim_valid;
 	wire [31:0]  result_axi;
 	wire [95:0]  wim_axi;
-	wire [5:0]   status = {dsp_levels_axi, seq_busy_axi, locked_axi};
+	wire [5:0]   status = {dsp_levels_axi[3:0], seq_busy_axi, locked_axi};
+	wire         nn_valid;
+	wire [95:0]  nn_axi;
+	reg  [31:0]  nn_seq      = 32'd0;
+	reg  [31:0]  nn_est_q    = 32'd0;
+	reg  [31:0]  nn_corr_q   = 32'd0;
+	reg  [31:0]  nn_cycles_q = 32'd0;
 
 	reg  [31:0]  result_q    = 32'd0;
 	reg  [31:0]  result_seq  = 32'd0;
@@ -196,7 +238,8 @@ module mclp_registers #(
 	wire [2047:0] resp_pad   = seq_resp_axi;    // zero-extended to 64 channels for the read index
 	wire [319:0]  faults_pad = faults_axi;
 
-	wire [6:0] irq_events = {
+	wire [7:0] irq_events = {
+		nn_valid,                        // [7] inference done
 		status_q[5] & ~status[5],        // [6] capture done
 		status_q[1] & ~status[1],        // [5] sequencer done
 		|(faults_axi & ~faults_q),       // [4] new fault
@@ -210,6 +253,7 @@ module mclp_registers #(
 
 	//Memory-read-data-----------------------------------------------------------------------------------
 	wire [31:0] gain_douta, offset_douta, trim_douta, fir_douta, seq_douta;
+	wire [31:0] nn_lay_douta, nn_bias_douta, nn_wt_douta;
 
 	always @(*) begin
 		case (rd_sel)
@@ -218,6 +262,9 @@ module mclp_registers #(
 			SEL_TRIM:   bram_rddata_a = trim_douta;
 			SEL_FIR:    bram_rddata_a = fir_douta;
 			SEL_SEQ:    bram_rddata_a = seq_douta;
+			SEL_NN_LAY: bram_rddata_a = nn_lay_douta;
+			SEL_NN_BIAS: bram_rddata_a = nn_bias_douta;
+			SEL_NN_WT:  bram_rddata_a = nn_wt_douta;
 			default:    bram_rddata_a = reg_rddata;
 		endcase
 	end
@@ -226,7 +273,7 @@ module mclp_registers #(
 	// AXI4-Lite to register port
 	////////////////////////////////////////////////////////////////////////////
 	axil_bram_ctrl #(
-		.C_S_AXI_ADDR_WIDTH(12),
+		.C_S_AXI_ADDR_WIDTH(16),
 		.C_S_AXI_DATA_WIDTH(32)
 	) axil_bram_ctrl_0 (
 		.S_AXI_ACLK(s_axi_aclk),
@@ -267,7 +314,7 @@ module mclp_registers #(
 		reg_seq_start   <= 1'b0;
 		reg_sw_trigger  <= 1'b0;
 		reg_fault_clear <= 1'b0;
-		reg_irq_status  <= reg_irq_status | {25'd0, irq_events};
+		reg_irq_status  <= reg_irq_status | {24'd0, irq_events};
 		if (!s_axi_aresetn) begin
 			reg_enable         <= 1'b1;       // the AD7190 init list runs at power-up
 			reg_loopback       <= 1'b0;
@@ -285,6 +332,7 @@ module mclp_registers #(
 			reg_trig_threshold <= 32'd0;
 			reg_loopback_cfg   <= {16'd4166, 16'd0};
 			reg_loopback_value <= 32'h0012_3456;
+			reg_nn_enable      <= 1'b0;
 			rd_sel             <= SEL_REG;
 		end else if (bram_wr) begin
 			case (bram_addr_a)
@@ -298,7 +346,7 @@ module mclp_registers #(
 					reg_sw_trigger  <= bram_wrdata_a[7];
 					reg_fault_clear <= bram_wrdata_a[8];
 				end
-				REG_RW_0003: reg_irq_status     <= (reg_irq_status & ~bram_wrdata_a) | {25'd0, irq_events};
+				REG_RW_0003: reg_irq_status     <= (reg_irq_status & ~bram_wrdata_a) | {24'd0, irq_events};
 				REG_RW_0004: reg_irq_enable     <= bram_wrdata_a;
 				REG_RW_0013: reg_stab_band      <= bram_wrdata_a;
 				REG_RW_0014: reg_stab_count     <= bram_wrdata_a;
@@ -310,11 +358,13 @@ module mclp_registers #(
 				REG_RW_0021: reg_loopback_cfg   <= bram_wrdata_a;
 				REG_RW_0022: reg_loopback_value <= bram_wrdata_a;
 				REG_RW_0023: reg_wim_level      <= bram_wrdata_a[15:0];
+				REG_NN_CTRL: reg_nn_enable      <= USE_NN && bram_wrdata_a[0];
 				default: ;
 			endcase
 		end else if (bram_rd) begin
 			rd_sel <= hit_gain ? SEL_GAIN : hit_offset ? SEL_OFFSET : hit_trim ? SEL_TRIM :
-			          hit_fir ? SEL_FIR : hit_seq ? SEL_SEQ : SEL_REG;
+			          hit_fir ? SEL_FIR : hit_seq ? SEL_SEQ : hit_nn_lay ? SEL_NN_LAY :
+			          hit_nn_bias ? SEL_NN_BIAS : hit_nn_wt ? SEL_NN_WT : SEL_REG;
 			case (bram_addr_a)
 				REG_RO_0000: reg_rddata <= FPGA_ID;
 				REG_RW_0001: reg_rddata <= {25'd0, reg_raw_enable, reg_raw_tap, 2'b00, reg_loopback, reg_enable};
@@ -336,6 +386,12 @@ module mclp_registers #(
 				REG_RW_0021: reg_rddata <= reg_loopback_cfg;
 				REG_RW_0022: reg_rddata <= reg_loopback_value;
 				REG_RW_0023: reg_rddata <= {16'd0, reg_wim_level};
+				REG_NN_CTRL:   reg_rddata <= USE_NN ? {31'd0, reg_nn_enable} : READ_BAD;
+				REG_NN_STATUS: reg_rddata <= USE_NN ? {31'd0, dsp_levels_axi[4]} : READ_BAD;
+				REG_NN_SEQ:    reg_rddata <= USE_NN ? nn_seq : READ_BAD;
+				REG_NN_EST:    reg_rddata <= USE_NN ? nn_est_q : READ_BAD;
+				REG_NN_CORR:   reg_rddata <= USE_NN ? nn_corr_q : READ_BAD;
+				REG_NN_CYCLES: reg_rddata <= USE_NN ? nn_cycles_q : READ_BAD;
 				default:     reg_rddata <= hit_resp  && idx < N_CH ? resp_pad[32*idx +: 32] :
 				                         hit_fault && idx < N_CH ? {27'd0, faults_pad[5*idx +: 5]} : READ_BAD;
 			endcase
@@ -354,11 +410,19 @@ module mclp_registers #(
 			wim_sum_q   <= wim_axi[95:32];
 			wim_count_q <= wim_axi[31:0];
 		end
+		if (nn_valid) begin
+			{nn_est_q, nn_corr_q, nn_cycles_q} <= nn_axi;
+			nn_seq <= nn_seq + 1;
+		end
 		if (!s_axi_aresetn) begin
 			result_q    <= 32'd0;
 			result_seq  <= 32'd0;
 			wim_sum_q   <= 64'd0;
 			wim_count_q <= 32'd0;
+			nn_seq      <= 32'd0;
+			nn_est_q    <= 32'd0;
+			nn_corr_q   <= 32'd0;
+			nn_cycles_q <= 32'd0;
 		end
 	end
 
@@ -596,6 +660,200 @@ module mclp_registers #(
 	);
 
 	////////////////////////////////////////////////////////////////////////////
+	// Model memories (USE_NN): layer list, biases, weights; port B read by mclp_nn in clk_dsp
+	////////////////////////////////////////////////////////////////////////////
+	generate if (USE_NN) begin : g_nn
+		xpm_memory_tdpram #(
+			.ADDR_WIDTH_A(6),
+			.ADDR_WIDTH_B(6),
+			.BYTE_WRITE_WIDTH_A(32),
+			.BYTE_WRITE_WIDTH_B(32),
+			.CLOCKING_MODE("independent_clock"),
+			.MEMORY_INIT_FILE(NN_LAYERS_INIT_FILE),
+			.MEMORY_SIZE(2048),
+			.READ_DATA_WIDTH_A(32),
+			.READ_DATA_WIDTH_B(32),
+			.READ_LATENCY_A(1),
+			.READ_LATENCY_B(1),
+			.USE_MEM_INIT(1),
+			.WRITE_DATA_WIDTH_A(32),
+			.WRITE_DATA_WIDTH_B(32),
+			.WRITE_MODE_A("no_change"),
+			.WRITE_MODE_B("no_change")
+		) xpm_memory_nn_lay_inst (
+			.sleep(1'b0),
+			.clka(s_axi_aclk),
+			.rsta(1'b0),
+			.ena(bram_en_a && hit_nn_lay),
+			.regcea(1'b1),
+			.wea(bram_wr),
+			.addra(bram_addr_a[7:2]),
+			.dina(bram_wrdata_a),
+			.injectsbiterra(1'b0),
+			.injectdbiterra(1'b0),
+			.douta(nn_lay_douta),
+			.sbiterra(),
+			.dbiterra(),
+			.clkb(clk_dsp),
+			.rstb(1'b0),
+			.enb(1'b1),
+			.regceb(1'b1),
+			.web(1'b0),
+			.addrb(dsp_nn_lay_addr),
+			.dinb(32'd0),
+			.injectsbiterrb(1'b0),
+			.injectdbiterrb(1'b0),
+			.doutb(dsp_nn_lay_q),
+			.sbiterrb(),
+			.dbiterrb()
+		);
+
+		xpm_memory_tdpram #(
+			.ADDR_WIDTH_A(8),
+			.ADDR_WIDTH_B(8),
+			.BYTE_WRITE_WIDTH_A(32),
+			.BYTE_WRITE_WIDTH_B(32),
+			.CLOCKING_MODE("independent_clock"),
+			.MEMORY_INIT_FILE(NN_BIAS_INIT_FILE),
+			.MEMORY_SIZE(8192),
+			.READ_DATA_WIDTH_A(32),
+			.READ_DATA_WIDTH_B(32),
+			.READ_LATENCY_A(1),
+			.READ_LATENCY_B(1),
+			.USE_MEM_INIT(1),
+			.WRITE_DATA_WIDTH_A(32),
+			.WRITE_DATA_WIDTH_B(32),
+			.WRITE_MODE_A("no_change"),
+			.WRITE_MODE_B("no_change")
+		) xpm_memory_nn_bias_inst (
+			.sleep(1'b0),
+			.clka(s_axi_aclk),
+			.rsta(1'b0),
+			.ena(bram_en_a && hit_nn_bias),
+			.regcea(1'b1),
+			.wea(bram_wr),
+			.addra(bram_addr_a[9:2]),
+			.dina(bram_wrdata_a),
+			.injectsbiterra(1'b0),
+			.injectdbiterra(1'b0),
+			.douta(nn_bias_douta),
+			.sbiterra(),
+			.dbiterra(),
+			.clkb(clk_dsp),
+			.rstb(1'b0),
+			.enb(1'b1),
+			.regceb(1'b1),
+			.web(1'b0),
+			.addrb(dsp_nn_bias_addr),
+			.dinb(32'd0),
+			.injectsbiterrb(1'b0),
+			.injectdbiterrb(1'b0),
+			.doutb(dsp_nn_bias_q),
+			.sbiterrb(),
+			.dbiterrb()
+		);
+
+		xpm_memory_tdpram #(
+			.ADDR_WIDTH_A(12),
+			.ADDR_WIDTH_B(12),
+			.BYTE_WRITE_WIDTH_A(32),
+			.BYTE_WRITE_WIDTH_B(32),
+			.CLOCKING_MODE("independent_clock"),
+			.MEMORY_INIT_FILE(NN_WEIGHTS_INIT_FILE),
+			.MEMORY_PRIMITIVE("block"),
+			.MEMORY_SIZE(131072),
+			.READ_DATA_WIDTH_A(32),
+			.READ_DATA_WIDTH_B(32),
+			.READ_LATENCY_A(1),
+			.READ_LATENCY_B(1),
+			.USE_MEM_INIT(1),
+			.WRITE_DATA_WIDTH_A(32),
+			.WRITE_DATA_WIDTH_B(32),
+			.WRITE_MODE_A("no_change"),
+			.WRITE_MODE_B("no_change")
+		) xpm_memory_nn_wt_inst (
+			.sleep(1'b0),
+			.clka(s_axi_aclk),
+			.rsta(1'b0),
+			.ena(bram_en_a && hit_nn_wt),
+			.regcea(1'b1),
+			.wea(bram_wr),
+			.addra(bram_addr_a[13:2]),
+			.dina(bram_wrdata_a),
+			.injectsbiterra(1'b0),
+			.injectdbiterra(1'b0),
+			.douta(nn_wt_douta),
+			.sbiterra(),
+			.dbiterra(),
+			.clkb(clk_dsp),
+			.rstb(1'b0),
+			.enb(1'b1),
+			.regceb(1'b1),
+			.web(1'b0),
+			.addrb(dsp_nn_wt_addr),
+			.dinb(32'd0),
+			.injectsbiterrb(1'b0),
+			.injectdbiterrb(1'b0),
+			.doutb(dsp_nn_wt_q),
+			.sbiterrb(),
+			.dbiterrb()
+		);
+
+		// Inference results with their strobe, one entry per inference
+		xpm_fifo_axis #(
+			.CDC_SYNC_STAGES(2),
+			.CLOCKING_MODE("independent_clock"),
+			.FIFO_DEPTH(16),
+			.FIFO_MEMORY_TYPE("distributed"),
+			.PACKET_FIFO("false"),
+			.PROG_FULL_THRESH(10),
+			.TDATA_WIDTH(96),
+			.USE_ADV_FEATURES("1000")
+		) xpm_fifo_nn_inst (
+			.s_aresetn(!dsp_rst),
+			.s_aclk(clk_dsp),
+			.m_aclk(s_axi_aclk),
+			.s_axis_tvalid(dsp_nn_done),
+			.s_axis_tready(),
+			.s_axis_tdata({dsp_nn_est, dsp_nn_corr, dsp_nn_cycles}),
+			.s_axis_tstrb(12'hFFF),
+			.s_axis_tkeep(12'hFFF),
+			.s_axis_tlast(1'b0),
+			.s_axis_tid(1'b0),
+			.s_axis_tdest(1'b0),
+			.s_axis_tuser(1'b0),
+			.m_axis_tvalid(nn_valid),
+			.m_axis_tready(1'b1),
+			.m_axis_tdata(nn_axi),
+			.m_axis_tstrb(),
+			.m_axis_tkeep(),
+			.m_axis_tlast(),
+			.m_axis_tid(),
+			.m_axis_tdest(),
+			.m_axis_tuser(),
+			.prog_full_axis(),
+			.wr_data_count_axis(),
+			.almost_full_axis(),
+			.prog_empty_axis(),
+			.rd_data_count_axis(),
+			.almost_empty_axis(),
+			.injectsbiterr_axis(1'b0),
+			.injectdbiterr_axis(1'b0),
+			.sbiterr_axis(),
+			.dbiterr_axis()
+		);
+	end else begin : g_no_nn
+		assign nn_lay_douta  = 32'd0;
+		assign nn_bias_douta = 32'd0;
+		assign nn_wt_douta   = 32'd0;
+		assign dsp_nn_lay_q  = 32'd0;
+		assign dsp_nn_bias_q = 32'd0;
+		assign dsp_nn_wt_q   = 32'd0;
+		assign nn_valid      = 1'b0;
+		assign nn_axi        = 96'd0;
+	end endgenerate
+
+	////////////////////////////////////////////////////////////////////////////
 	// SYNC OUT: s_axi_aclk -> clk_spi, clk_dsp
 	// Configuration buses use free-running xpm_cdc_handshake transfers: src_send restarts as soon as
 	// src_rcv drops, and the hold register only loads between transfers, so every word arrives whole.
@@ -603,14 +861,15 @@ module mclp_registers #(
 	reg  [57:0]  spi_cfg_hold = 58'd0;
 	reg          spi_cfg_send = 1'b0;
 	wire         spi_cfg_rcv;
-	reg  [242:0] dsp_cfg_hold = 243'd0;
+	reg  [243:0] dsp_cfg_hold = 244'd0;
 	reg          dsp_cfg_send = 1'b0;
 	wire         dsp_cfg_rcv;
 
 	always @(posedge s_axi_aclk) begin
 		if (!spi_cfg_send) spi_cfg_hold <= {reg_enable, reg_loopback, reg_loopback_cfg, reg_loopback_value[23:0]};
 		if (!dsp_cfg_send) dsp_cfg_hold <= {reg_stab_band, reg_stab_count, reg_wim_enter, reg_wim_exit, reg_wim_level,
-		                                    reg_result_decim, reg_trig_cfg, reg_trig_threshold, reg_raw_tap, reg_raw_enable};
+		                                    reg_result_decim, reg_trig_cfg, reg_trig_threshold, reg_raw_tap, reg_raw_enable,
+		                                    reg_nn_enable};
 		spi_cfg_send <= !spi_cfg_rcv;
 		dsp_cfg_send <= !dsp_cfg_rcv;
 	end
@@ -654,10 +913,10 @@ module mclp_registers #(
 		.INIT_SYNC_FF(1),
 		.SIM_ASSERT_CHK(0),
 		.SRC_SYNC_FF(2),
-		.WIDTH(243)
+		.WIDTH(244)
 	) xpm_cdc_dsp_cfg_inst (
 		.dest_out({dsp_stab_band, dsp_stab_count, dsp_wim_enter, dsp_wim_exit, dsp_wim_level, dsp_result_decim,
-		           dsp_trig_cfg, dsp_trig_threshold, dsp_raw_tap, dsp_raw_enable}),
+		           dsp_trig_cfg, dsp_trig_threshold, dsp_raw_tap, dsp_raw_enable, dsp_nn_enable}),
 		.dest_req(),
 		.src_rcv(dsp_cfg_rcv),
 		.dest_ack(1'b0),
@@ -763,12 +1022,12 @@ module mclp_registers #(
 		.INIT_SYNC_FF(1),
 		.SIM_ASSERT_CHK(0),
 		.SRC_INPUT_REG(1),
-		.WIDTH(4)
+		.WIDTH(5)
 	) xpm_cdc_dsp_levels_inst (
 		.dest_out(dsp_levels_axi),
 		.dest_clk(s_axi_aclk),
 		.src_clk(clk_dsp),
-		.src_in({dsp_capture_active, dsp_stable, dsp_overload, dsp_reload_busy})
+		.src_in({dsp_nn_busy, dsp_capture_active, dsp_stable, dsp_overload, dsp_reload_busy})
 	);
 
 	// Sticky fault bits cross bit by bit; each bit only sets until fault_clear

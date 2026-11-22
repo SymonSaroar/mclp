@@ -173,7 +173,7 @@ static int platform_check(void)
 		delay_ms(1);
 	}
 	step("start-up: clear interrupt events left over from power-up");
-	reg_wr(REG_IRQ_STATUS, 0x7Fu);
+	reg_wr(REG_IRQ_STATUS, 0xFFu);
 	return 0;
 }
 

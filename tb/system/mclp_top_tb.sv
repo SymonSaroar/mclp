@@ -38,12 +38,12 @@ module mclp_top_tb #(
 		);
 	end
 
-	task automatic wr(input [11:0] a, input [31:0] d);
-		dut.write32({20'h43C00, a}, d);
+	task automatic wr(input [15:0] a, input [31:0] d);
+		dut.write32({16'h43C0, a}, d);
 	endtask
 
-	task automatic rd(input [11:0] a, output [31:0] d);
-		dut.read32({20'h43C00, a}, d);
+	task automatic rd(input [15:0] a, output [31:0] d);
+		dut.read32({16'h43C0, a}, d);
 	endtask
 
 	task automatic check(input bit ok, input string what);
@@ -113,7 +113,7 @@ module mclp_top_tb #(
 		// ---- init list, ID: reset 0.6 ms, zero-scale calibration 4 conversions (0.83 ms), then streaming
 		ms(3);
 		rd(12'h000, v);
-		check(v == {16'h4D4C, 8'h04, 8'(N_CH)}, $sformatf("ID register 0x%08X", v));
+		check(v == {16'h4D4C, 8'h05, 8'(N_CH)}, $sformatf("ID register 0x%08X", v));
 		rd(STATUS, v);
 		check(v[0] && !v[1], "MMCM locked, init list finished");
 		for (int k = 0; k < N_CH; k++) begin

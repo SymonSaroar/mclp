@@ -4,7 +4,7 @@
 // then on, and clk_locked rises 1 us later, like clk_wiz; its MMCME2_ADV model toggles a 1 GHz VCO, too slow
 // here. The PL clocks wait for the reset because the xpm_cdc_async_rst synchronizers read "not in reset"
 // during glbl.GSR (first 100 ns).
-// write32/read32 drive the core's AXI4-Lite port (full addresses; the core decodes [11:0]); every raw record
+// write32/read32 drive the core's AXI4-Lite port (full addresses; the core decodes [15:0]); every raw record
 // beat lands in raw_data/raw_last, raw_n counts them. The AXI DMA and DDR are not modelled.
 // N_CH exists only here, for testing other channel counts; the block design sets the core's N_CH (8).
 `timescale 1ns / 1ps
@@ -107,7 +107,7 @@ module mclp_top_wrapper #(
 		.clk_spi(clk_spi),
 		.clk_dsp(clk_dsp),
 		.clk_locked(locked),
-		.s_axi_awaddr(awaddr[11:0]),
+		.s_axi_awaddr(awaddr[15:0]),
 		.s_axi_awprot(3'b000),
 		.s_axi_awvalid(awvalid),
 		.s_axi_awready(M_AXI_REGS_awready),
@@ -118,7 +118,7 @@ module mclp_top_wrapper #(
 		.s_axi_bresp(M_AXI_REGS_bresp),
 		.s_axi_bvalid(M_AXI_REGS_bvalid),
 		.s_axi_bready(bready),
-		.s_axi_araddr(araddr[11:0]),
+		.s_axi_araddr(araddr[15:0]),
 		.s_axi_arprot(3'b000),
 		.s_axi_arvalid(arvalid),
 		.s_axi_arready(M_AXI_REGS_arready),

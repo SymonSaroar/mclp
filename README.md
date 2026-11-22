@@ -4,7 +4,9 @@
 sigma-delta ADCs in parallel, one per load cell, and computes the weight in the FPGA. Each channel is
 decimated, corrected for offset and gain, and trimmed for its position on the platform. The core then sums the
 channels and low-pass filters the sum. Software configures the core and reads the weight over AXI4-Lite. Raw
-per-channel samples stream out over AXI4-Stream for calibration and diagnostics.
+per-channel samples stream out over AXI4-Stream for calibration and diagnostics. An optional inference engine
+runs a small int8 neural network on each weigh-in-motion load and corrects the result; models load over
+AXI4-Lite at run time.
 
 The repository also contains:
 
@@ -30,6 +32,7 @@ GPL-3.0 (software in `sw/`), or under a paid commercial license. See [LICENSE](L
 - 64-tap FIR filter, coefficients reloadable at run time
 - Stability detection
 - Weigh-in-motion
+- Int8 neural-network inference on each weigh-in-motion load, models loadable at run time
 - Overload detection
 - Per-channel fault detection: open wire, missing excitation, over-range, data errors
 - Raw data capture, continuous or triggered
@@ -48,14 +51,17 @@ GPL-3.0 (software in `sw/`), or under a paid commercial license. See [LICENSE](L
 
 ## Resource utilization
 
-`N_CH = 8`, out-of-context synthesis, `xc7z020clg484-1`, Vivado 2025.1:
+`N_CH = 8`, `USE_NN = 1`, out-of-context synthesis, `xc7z020clg484-1`, Vivado 2025.1:
 
 | LUT | LUT as memory | FF | Block RAM tiles | DSP48E1 |
 |---|---|---|---|---|
-| 3288 | 167 | 6053 | 11 (10 RAMB36, 2 RAMB18) | 13 |
+| 5252 | 252 | 7319 | 18.5 (17 RAMB36, 3 RAMB18) | 23 |
+
+The inference engine's datapath takes 1641 LUTs, 758 FFs, 1 RAMB36, 1 RAMB18 and 10 DSP48E1 of that, placed;
+its model memories sit in the register file.
 
 In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi` at 20 MHz and `clk_dsp` at
-50 MHz, all user-specified timing constraints are met: WNS +1.627 ns, WHS +0.016 ns.
+50 MHz, all user-specified timing constraints are met: WNS +0.737 ns, WHS +0.021 ns.
 
 ## Getting started
 
@@ -69,12 +75,12 @@ In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi`
    ```
 
 2. Add the folder that holds `mclp_core` to the project's IP repositories (Settings > IP > Repository).
-3. Add MCLP load-cell core to a block design. Set Channels (`N_CH`).
+3. Add MCLP load-cell core to a block design. Set Channels (`N_CH`) and Inference engine (`USE_NN`).
 4. Connect the interfaces:
 
    | Core | Connect to |
    |---|---|
-   | `s_axi` | AXI4-Lite master; address range 4 KB |
+   | `s_axi` | AXI4-Lite master; address range 64 KB |
    | `m_axis_raw` | AXI DMA S2MM, 64-bit stream. Optional. With `tready` low, raw records are dropped and the weight path runs on. |
    | `aclk`, `aresetn` | AXI clock and its reset |
    | `clk_spi`, `clk_dsp`, `clk_locked` | MMCM outputs at 20 MHz and 50 MHz, and its `locked`. Reset the MMCM from the AXI reset. |
@@ -105,6 +111,7 @@ Each release carries prebuilt boot files for it.
 | Parameter | Values | Default | Description |
 |---|---|---|---|
 | `N_CH` | 1 to 64 | 8 | Number of AD7190 chips; width of `spi_sdi` |
+| `USE_NN` | 0, 1 | 1 | Inference engine and its model memories |
 
 ### Ports
 
@@ -115,7 +122,7 @@ Each release carries prebuilt boot files for it.
 | `clk_spi` | in | 1 | | 20 MHz: SPI master, sequencer, loopback emulator |
 | `clk_dsp` | in | 1 | | 50 MHz: processing chain, raw capture |
 | `clk_locked` | in | 1 | async | `clk_spi` and `clk_dsp` running. Resets their domains while low. |
-| `s_axi_*` | | | `aclk` | AXI4-Lite slave, 12-bit address, 32-bit data |
+| `s_axi_*` | | | `aclk` | AXI4-Lite slave, 16-bit address, 32-bit data |
 | `m_axis_raw_*` | out | 64 | `aclk` | AXI4-Stream master: `tdata`, `tlast`, `tvalid`, `tready` |
 | `irq` | out | 1 | `aclk` | Interrupt, level, active high |
 | `spi_sclk` | out | 1 | `clk_spi` | SPI clock, to SCLK of every AD7190 |
@@ -130,7 +137,7 @@ Each release carries prebuilt boot files for it.
 |---|---|---|
 | `aclk` | 100 MHz tested | AXI interfaces, registers, interrupt |
 | `clk_spi` | 20 MHz required | SPI master, sequencer, loopback emulator, timestamps |
-| `clk_dsp` | 50 MHz tested | CIC, scaling, sum, FIR, stability, weigh-in-motion, raw capture |
+| `clk_dsp` | 50 MHz tested | CIC, scaling, sum, FIR, stability, weigh-in-motion, raw capture, inference |
 
 SCLK is `clk_spi` / 8. A SYNC pulse lasts 32 `clk_spi` cycles (1.6 µs). The sequencer's `WAIT_US` counts 20
 cycles per microsecond.
@@ -167,15 +174,15 @@ weights of a load (1.7 s); in a longer load, each older weight is compared with 
 
 ### Register space
 
-4 KB. Offsets from the base address assigned in the block design (0x43C0_0000 in the reference design).
-Register map version 4. Per-channel arrays take one 64-word block each, channel k at +4k.
+64 KB. Offsets from the base address assigned in the block design (0x43C0_0000 in the reference design).
+Register map version 5. Per-channel arrays take one 64-word block each, channel k at +4k.
 
 | Offset | Name | Description |
 |---|---|---|
-| 0x000 | ID | 0x4D4C_04nn. [31:16] 0x4D4C ("ML"), [15:8] register map version, [7:0] `N_CH` |
+| 0x000 | ID | 0x4D4C_05nn. [31:16] 0x4D4C ("ML"), [15:8] register map version, [7:0] `N_CH` |
 | 0x004 | CTRL | [0] enable (reset 1), [1] loopback, [5:4] raw_tap, [6] raw_enable. Self-clearing: [2] fir_reload, [3] seq_start, [7] sw_trigger, [8] fault_clear |
 | 0x008 | STATUS | [0] clocks locked, [1] seq_busy, [2] reload_busy, [3] overload, [4] stable, [5] capture_active |
-| 0x00C | IRQ_STATUS | Write 1 to clear. [0] result, [1] stable, [2] weigh-in-motion, [3] overload, [4] fault, [5] sequencer done, [6] capture done |
+| 0x00C | IRQ_STATUS | Write 1 to clear. [0] result, [1] stable, [2] weigh-in-motion, [3] overload, [4] fault, [5] sequencer done, [6] capture done, [7] inference done |
 | 0x010 | IRQ_ENABLE | Same bits as IRQ_STATUS |
 | 0x020 | RESULT | Weight, signed |
 | 0x024 | RESULT_SEQ | Increments with each RESULT update |
@@ -197,8 +204,18 @@ Register map version 4. Per-channel arrays take one 64-word block each, channel 
 | 0xA00-0xAFC | OFFSET[64] | CIC units, reset 0 |
 | 0xB00-0xBFC | TRIM[64] | Q2.30, reset 1.0 |
 | 0xC00-0xCFC | FAULT[64] | Sticky. [0] ERR, [1] NOREF, [2] parity error, [3] stale (RDY set), [4] loopback mismatch |
+| 0x1000 | NN_CTRL | [0] enable: run the model after each weigh-in-motion load. Reset 0 |
+| 0x1004 | NN_STATUS | [0] busy |
+| 0x1008 | NN_SEQ | Increments with each inference |
+| 0x100C | NN_EST | Corrected weigh-in-motion estimate, weight counts, signed |
+| 0x1010 | NN_CORR | Correction to WIM_SUM / WIM_COUNT, Q0.20, signed |
+| 0x1014 | NN_CYCLES | `clk_dsp` cycles of the last inference |
+| 0x2000-0x20FC | NN_LAYER[64] | Layer list. Reset from `coeff/nn_layers.mem` |
+| 0x3000-0x33FC | NN_BIAS[256] | Biases, int32. Reset from `coeff/nn_bias.mem` |
+| 0x4000-0x7FFC | NN_WEIGHT[4096] | Weights, four int8 per word, the first in [7:0]. Reset from `coeff/nn_weights.mem` |
 
-Unmapped addresses and array entries at or above `N_CH` read 0x0BAD_0BAD. A configuration write reaches
+Unmapped addresses and array entries at or above `N_CH` read 0x0BAD_0BAD, and so does 0x1000 to 0x7FFF with
+`USE_NN = 0`. A configuration write reaches
 `clk_spi` and `clk_dsp` within about 1 µs.
 
 Fault flags: ERR is the AD7190's error bit (over-range, open input with burnout currents on, missing reference
@@ -253,6 +270,37 @@ Trigger modes (TRIG_CFG[1:0]): 0 continuous while CTRL.raw_enable is set. 1 one-
 records after CTRL.sw_trigger. 2 one-shot armed by CTRL.sw_trigger, starting at the first frame whose sum
 exceeds TRIG_THRESHOLD. IRQ_STATUS[6] sets when a one-shot ends.
 
+### Inference engine
+
+With `USE_NN = 1` the core runs a small neural network on each weigh-in-motion load and corrects the result.
+It starts when a load ends and NN_CTRL.enable is set. Its input is every 4th weight, 256 of them up to the
+load's exit sample (1.7 s), as the deviation from the core's own result: with ref = WIM_SUM / WIM_COUNT, each
+weight x becomes the int8 value (x / ref - 1) x 1024, saturated. A load that ends while the engine is busy is
+not run.
+
+The network is a list of one-dimensional convolutions over the valid positions, with int8 weights and
+activations and int32 biases. A dense layer is a convolution whose kernel spans its whole input. Hidden layers
+requantize to int8, (acc x M + 2^(s-1)) >> s with a 15-bit M, clipped at 0 when the layer has a ReLU. The last
+layer gives NN_CORR, a correction in Q0.20, and NN_EST = ref + (ref x NN_CORR + 2^19) >> 20, both saturated to
+32 bits. The engine does one multiply-accumulate per `clk_dsp` cycle; the default model takes 44439 cycles
+(0.89 ms at 50 MHz). IRQ_STATUS[7] sets when the result is in the registers.
+
+Layer list: four words per layer, from NN_LAYER[0] to the layer marked last.
+
+| Word | Fields |
+|---|---|
+| 0 | [31] last, [30] ReLU, [29:26] stride, [25:16] kernel K, [15:8] input channels C, [7:0] output channels O |
+| 1 | [25:16] input length L, [9:0] output length T = (L - K) / stride + 1 |
+| 2 | [21:16] s, 1 to 47; [14:0] M |
+| 3 | [31:16] first bias, [15:0] first weight byte |
+
+Weights are in (O, C, K) order. A layer's input and output are stored channel by channel, so C x L and O x T
+must not exceed 1024. The first layer has C = 1 and L = 256.
+
+To load a model: clear NN_CTRL.enable, write NN_LAYER, NN_BIAS and NN_WEIGHT, set NN_CTRL.enable. The memories
+start with the default model in `coeff/nn_*.mem`, a weigh-in-motion correction for single axles on a 0.75 m
+platform with 8 cells. Another installation needs a model trained for it.
+
 ### Loopback BIST
 
 With CTRL.loopback set, an AD7190 emulator drives the DOUT inputs. It answers the core's own SCLK, CS and
@@ -264,7 +312,7 @@ from the coefficients.
 
 ### Programming sequence
 
-1. Read ID. Check [31:8] = 0x4D4C04 and take `N_CH` from [7:0].
+1. Read ID. Check [31:8] = 0x4D4C05 and take `N_CH` from [7:0].
 2. Wait for STATUS[0] (clocks locked) and IRQ_STATUS[5] (sequencer done). After reset the core runs the
    default list on its own.
 3. Check the AD7190 ID answers: SEQ_RESP[k] bits [3:0] read 0x4 for each chip k below `N_CH`.
@@ -345,7 +393,7 @@ build/test_calib
 | `mclp_core_0` | `N_CH = 8`, registers at 0x43C0_0000 |
 | `irq_concat` | IRQ_F2P[0] DMA, IRQ_F2P[1] core |
 
-Placed and routed, the whole design takes 7863 LUTs, 12940 FFs, 12.5 block RAM tiles and 13 DSP48E1.
+Placed and routed, the whole design takes 9783 LUTs, 14190 FFs, 20 block RAM tiles and 23 DSP48E1.
 
 ### Hardware
 
@@ -456,7 +504,7 @@ At boot, `/etc/init.d/mclp` loads the UIO driver and runs `mclp init`: ID check,
 power-up list. The boot log shows the eight chip IDs. Then it starts `mclpd`. First checks on the board:
 
 ```sh
-sudo mclp status        # ID 4D4C0408, clocks locked, sequencer streaming
+sudo mclp status        # ID 4D4C0508, clocks locked, sequencer streaming
 sudo mclp bist          # loopback BIST through the whole capture path
 sudo mclp selftest      # per channel: open wire, missing reference, offset and noise
 ```
@@ -559,9 +607,11 @@ rtl/mclp_fir.sv           64-tap FIR with two coefficient banks
 rtl/coef_reload.sv        FIR coefficient reload from RAM
 rtl/stability_detect.sv   Stability flag
 rtl/wim_estimator.sv      Weigh-in-motion
+rtl/mclp_nn.sv            Inference engine (clk_dsp)
 rtl/raw_capture.sv        Raw records and triggers
 coeff/fir64.py            Default FIR coefficients, writes fir64.mem
 coeff/seq_init.py         Default sequencer list and unity gain image: seq_init.mem, unity64.mem, sw/common/seq_init.h
+coeff/nn_*.mem            Default inference model: layer list, biases, weights
 tcl/package_ip.tcl        Packages the core as mclp:ip:mclp_core:1.0
 tcl/mclp.tcl              Vivado project of the reference design
 tcl/mclp_top_bd.tcl       Reference block design

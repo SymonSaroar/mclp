@@ -3,11 +3,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 // mclp_dsp
 // Processing subsystem, clk domain clk_dsp: CIC, gain/offset, corner trim, channel sum, FIR with
-// coefficient reload, weight, result decimation, stability, WIM, sticky faults and raw capture.
+// coefficient reload, weight, result decimation, stability, WIM, sticky faults, raw capture and, with
+// USE_NN, the inference engine on the weight stream and the WIM results.
 // Every input is already in clk_dsp (mclp_registers does the crossings); configuration is quasi-static.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_dsp #(
-	parameter integer N_CH = 8
+	parameter integer N_CH   = 8,
+	parameter integer USE_NN = 1
 ) (
 	// Clock and reset
 	input  wire               clk,
@@ -59,7 +61,21 @@ module mclp_dsp #(
 	output wire               m_valid,
 	output wire [63:0]        m_data,
 	output wire               m_last,
-	input  wire               raw_full
+	input  wire               raw_full,
+
+	// Inference engine: model memory read ports (mclp_registers, read latency 1) and results
+	input  wire               nn_enable,
+	output wire [5:0]         nn_lay_addr,
+	input  wire [31:0]        nn_lay_q,
+	output wire [7:0]         nn_bias_addr,
+	input  wire [31:0]        nn_bias_q,
+	output wire [11:0]        nn_wt_addr,
+	input  wire [31:0]        nn_wt_q,
+	output wire               nn_done,
+	output wire [31:0]        nn_est,
+	output wire [31:0]        nn_corr,
+	output wire [31:0]        nn_cycles,
+	output wire               nn_busy
 );
 
 	localparam signed [63:0] W_MAX = 64'sd2147483647;
@@ -263,6 +279,39 @@ module mclp_dsp #(
 		.sum(wim_sum),
 		.count(wim_count)
 	);
+
+	generate if (USE_NN) begin : g_nn
+		mclp_nn mclp_nn_0 (
+			.clk(clk),
+			.rst(rst),
+			.enable(nn_enable),
+			.s_valid(fir_valid),
+			.s_data(weight),
+			.wim_new(wim_new),
+			.wim_sum(wim_sum),
+			.wim_count(wim_count),
+			.lay_addr(nn_lay_addr),
+			.lay_q(nn_lay_q),
+			.bias_addr(nn_bias_addr),
+			.bias_q(nn_bias_q),
+			.wt_addr(nn_wt_addr),
+			.wt_q(nn_wt_q),
+			.done(nn_done),
+			.est(nn_est),
+			.corr(nn_corr),
+			.cycles(nn_cycles),
+			.busy(nn_busy)
+		);
+	end else begin : g_no_nn
+		assign nn_lay_addr  = 6'd0;
+		assign nn_bias_addr = 8'd0;
+		assign nn_wt_addr   = 12'd0;
+		assign nn_done      = 1'b0;
+		assign nn_est       = 32'd0;
+		assign nn_corr      = 32'd0;
+		assign nn_cycles    = 32'd0;
+		assign nn_busy      = 1'b0;
+	end endgenerate
 
 	// Result: every Nth weight (N = result_decim, 12 gives 50 Hz); overload of the latest frame
 	reg [31:0] dec_cnt = 32'd0;
