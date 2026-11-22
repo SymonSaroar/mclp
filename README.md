@@ -1,12 +1,13 @@
 # MCLP load-cell core
 
 `mclp_core` is a load-cell weighing IP core for AMD FPGAs. It reads 1 to 64 Analog Devices AD7190 24-bit
-sigma-delta ADCs in parallel, one per load cell, and computes the weight in the FPGA. Each channel is
-decimated, corrected for offset and gain, and trimmed for its position on the platform. The core then sums the
+sigma-delta ADCs in parallel, one per load cell, and computes the weight in the FPGA. The core decimates each
+channel, corrects it for offset and gain, and trims it for its position on the platform. Then it sums the
 channels and low-pass filters the sum. Software configures the core and reads the weight over AXI4-Lite. Raw
-per-channel samples stream out over AXI4-Stream for calibration and diagnostics. An optional inference engine
-runs a small int8 neural network on each weigh-in-motion load and corrects the result; models load over
-AXI4-Lite at run time.
+per-channel samples stream out over AXI4-Stream for calibration and diagnostics.
+
+An optional inference engine runs a small int8 neural network on each weigh-in-motion load and corrects the
+result. Software loads its models over AXI4-Lite at run time.
 
 The repository also contains:
 
@@ -15,7 +16,7 @@ The repository also contains:
 - An 8-channel AD7190 FMC card in KiCad: [hw/adc-card](hw/adc-card/README.md)
 - cocotb unit tests, a system test with AD7190 models, and a DMA test of the reference design
 
-Status: passes simulation at 1, 8 and 64 channels. Not yet tested on hardware.
+Status: passes simulation at 1, 8 and 64 channels. Not tested on hardware yet.
 
 ## License
 
@@ -46,7 +47,7 @@ GPL-3.0 (software in `sw/`), or under a paid commercial license. See [LICENSE](L
 - FPGA families declared in the IP package: Zynq-7000, Spartan-7, Artix-7, Kintex-7, Virtex-7, Kintex and
   Virtex UltraScale and UltraScale+, Zynq UltraScale+ MPSoC. Implemented and timed on `xc7z020clg484-1` only.
 - Vivado 2025.1. The reference block-design script refuses other versions.
-- Simulators: Vivado simulator; Icarus Verilog 12 with the XPM models in `tb/common/xpm_models.sv`
+- Simulators: Vivado simulator, and Icarus Verilog 12 with the XPM models in `tb/common/xpm_models.sv`
 - ADC: AD7190
 
 ## Resource utilization
@@ -57,11 +58,11 @@ GPL-3.0 (software in `sw/`), or under a paid commercial license. See [LICENSE](L
 |---|---|---|---|---|
 | 5252 | 252 | 7319 | 18.5 (17 RAMB36, 3 RAMB18) | 23 |
 
-The inference engine's datapath takes 1641 LUTs, 758 FFs, 1 RAMB36, 1 RAMB18 and 10 DSP48E1 of that, placed;
-its model memories sit in the register file.
+Of that, the placed datapath of the inference engine takes 1641 LUTs, 758 FFs, 1 RAMB36, 1 RAMB18 and 10
+DSP48E1. Its model memories are in the register file.
 
-In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi` at 20 MHz and `clk_dsp` at
-50 MHz, all user-specified timing constraints are met: WNS +0.737 ns, WHS +0.021 ns.
+The reference design runs on the -1 speed grade with `aclk` at 100 MHz, `clk_spi` at 20 MHz and `clk_dsp` at
+50 MHz. All user-specified timing constraints are met: WNS +0.737 ns, WHS +0.021 ns.
 
 ## Getting started
 
@@ -80,11 +81,11 @@ In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi`
 
    | Core | Connect to |
    |---|---|
-   | `s_axi` | AXI4-Lite master; address range 64 KB |
-   | `m_axis_raw` | AXI DMA S2MM, 64-bit stream. Optional. With `tready` low, raw records are dropped and the weight path runs on. |
+   | `s_axi` | AXI4-Lite master, 64 KB address range |
+   | `m_axis_raw` | AXI DMA S2MM, 64-bit stream. Optional. With `tready` low, the core drops raw records and the weight path keeps running. |
    | `aclk`, `aresetn` | AXI clock and its reset |
    | `clk_spi`, `clk_dsp`, `clk_locked` | MMCM outputs at 20 MHz and 50 MHz, and its `locked`. Reset the MMCM from the AXI reset. |
-   | `irq` | interrupt controller |
+   | `irq` | Interrupt controller |
    | `spi_*`, `adc_sync_n` | FPGA pins to the AD7190s |
 
    [tcl/mclp_top_bd.tcl](tcl/mclp_top_bd.tcl) builds the reference block design with these connections.
@@ -98,7 +99,7 @@ In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi`
 ### Prototype on the ZC702
 
 The [reference design](#reference-design-zc702) runs the core with 8 channels on a ZC702 with the FMC card.
-Each release carries prebuilt boot files for it.
+Each release has prebuilt boot files for it.
 
 ## Product specification
 
@@ -110,7 +111,7 @@ Each release carries prebuilt boot files for it.
 
 | Parameter | Values | Default | Description |
 |---|---|---|---|
-| `N_CH` | 1 to 64 | 8 | Number of AD7190 chips; width of `spi_sdi` |
+| `N_CH` | 1 to 64 | 8 | Number of AD7190 chips, and the width of `spi_sdi` |
 | `USE_NN` | 0, 1 | 1 | Inference engine and its model memories |
 
 ### Ports
@@ -121,7 +122,7 @@ Each release carries prebuilt boot files for it.
 | `aresetn` | in | 1 | async | Reset, active low |
 | `clk_spi` | in | 1 | | 20 MHz: SPI master, sequencer, loopback emulator |
 | `clk_dsp` | in | 1 | | 50 MHz: processing chain, raw capture |
-| `clk_locked` | in | 1 | async | `clk_spi` and `clk_dsp` running. Resets their domains while low. |
+| `clk_locked` | in | 1 | async | `clk_spi` and `clk_dsp` run. Holds their domains in reset while low. |
 | `s_axi_*` | | | `aclk` | AXI4-Lite slave, 16-bit address, 32-bit data |
 | `m_axis_raw_*` | out | 64 | `aclk` | AXI4-Stream master: `tdata`, `tlast`, `tvalid`, `tready` |
 | `irq` | out | 1 | `aclk` | Interrupt, level, active high |
@@ -142,8 +143,8 @@ Each release carries prebuilt boot files for it.
 SCLK is `clk_spi` / 8. A SYNC pulse lasts 32 `clk_spi` cycles (1.6 µs). The sequencer's `WAIT_US` counts 20
 cycles per microsecond.
 
-`aresetn` resets the `aclk` logic. `clk_locked` resets the `clk_spi` and `clk_dsp` logic. Both are
-asynchronous and synchronized inside the core. Hold `clk_locked` low while `aresetn` is low. An MMCM reset
+`aresetn` resets the `aclk` logic, and `clk_locked` resets the `clk_spi` and `clk_dsp` logic. Both are
+asynchronous, and the core synchronizes them. Hold `clk_locked` low while `aresetn` is low. An MMCM reset
 driven by the AXI reset does this.
 
 ### Data path
@@ -160,22 +161,24 @@ driven by the AXI reset does this.
 | Weight | `sat32(FIR >>> (20 + ceil(log2(N_CH))))` | 600 Hz | 32 |
 | RESULT | every RESULT_DECIM-th weight | 50 Hz | 32 |
 
-The default FIR is a 12 Hz Hamming-windowed sinc with taps summing to 2^20 (`coeff/fir64.py`). Group delay:
-31.5 samples, 52.5 ms. At unity gain and trim, RESULT changes by 256 / 2^ceil(log2(N_CH)) counts per ADC code
-on one channel: 32 at 8 channels. All channels at full scale fit in 32 bits.
+The default FIR is a 12 Hz Hamming-windowed sinc with taps summing to 2^20 (`coeff/fir64.py`). Its group
+delay is 31.5 samples, 52.5 ms. At unity gain and trim, RESULT changes by 256 / 2^ceil(log2(N_CH)) counts per
+ADC code on one channel: 32 at 8 channels. All channels at full scale fit in 32 bits.
 
 The stability flag rises after STAB_COUNT consecutive weights within ±STAB_BAND of a reference. A weight
-outside the band clears it and becomes the new reference.
+outside the band clears the flag and becomes the new reference.
 
 A weigh-in-motion load starts with the first weight above WIM_ENTER and ends at the first weight below
-WIM_EXIT. The core sums the load's weights that are at or above WIM_LEVEL times its peak, so the ramps on and off
-the platform drop out at any speed. Result: WIM_SUM / WIM_COUNT, one per load. The core holds the last 1024
-weights of a load (1.7 s); in a longer load, each older weight is compared with the peak up to 1024 weights later.
+WIM_EXIT. The core sums the load's weights that are at or above WIM_LEVEL times its peak. The ramps on and off
+the platform drop out at any speed. The result is WIM_SUM / WIM_COUNT, one per load. The core holds the last
+1024 weights of a load (1.7 s). In a longer load, it compares each older weight with the peak up to 1024
+weights later.
 
 ### Register space
 
-64 KB. Offsets from the base address assigned in the block design (0x43C0_0000 in the reference design).
-Register map version 5. Per-channel arrays take one 64-word block each, channel k at +4k.
+The register space is 64 KB. Offsets are from the base address that the block design assigns (0x43C0_0000 in
+the reference design). Register map version 5. Each per-channel array takes one 64-word block, with channel k
+at +4k.
 
 | Offset | Name | Description |
 |---|---|---|
@@ -214,14 +217,18 @@ Register map version 5. Per-channel arrays take one 64-word block each, channel 
 | 0x3000-0x33FC | NN_BIAS[256] | Biases, int32. Reset from `coeff/nn_bias.mem` |
 | 0x4000-0x7FFC | NN_WEIGHT[4096] | Weights, four int8 per word, the first in [7:0]. Reset from `coeff/nn_weights.mem` |
 
-Unmapped addresses and array entries at or above `N_CH` read 0x0BAD_0BAD, and so does 0x1000 to 0x7FFF with
-`USE_NN = 0`. A configuration write reaches
-`clk_spi` and `clk_dsp` within about 1 µs.
+Unmapped addresses and array entries at or above `N_CH` read 0x0BAD_0BAD. With `USE_NN = 0`, 0x1000 to 0x7FFF
+read 0x0BAD_0BAD too. A configuration write reaches `clk_spi` and `clk_dsp` within about 1 µs.
 
-Fault flags: ERR is the AD7190's error bit (over-range, open input with burnout currents on, missing reference
-when REFDET is on). NOREF is its reference-detect bit. A parity error is a corrupted word on the cable. Stale
-means the chip had not finished a conversion when read. A new flag sets IRQ_STATUS[4]. CTRL.fault_clear clears
-all flags.
+Fault flags:
+
+- ERR is the AD7190's error bit: over-range, an open input with the burnout currents on, or a missing
+  reference when REFDET is on.
+- NOREF is its reference-detect bit.
+- A parity error is a corrupted word on the cable.
+- Stale means that the chip's conversion was not complete when the core read it.
+
+A new flag sets IRQ_STATUS[4]. CTRL.fault_clear clears all flags.
 
 ### Sequencer
 
@@ -244,82 +251,101 @@ w1 = data shifted out, MSB first
 
 STATUS.seq_busy falls and IRQ_STATUS[5] sets when the list reaches END or STREAM.
 
-The default list (`coeff/seq_init.py`) resets the chips, reads their ID registers, writes the configuration,
-runs the internal zero-scale calibration, starts continuous conversion, pulses SYNC and streams. AD7190
-configuration: AIN1/AIN2, REFIN1, reference detect on, buffer on, bipolar, gain 128; external clock on MCLK2,
-sinc4, FS = 1, status byte and parity appended to each word. To leave continuous read: `WAIT_RDY`, then `XFER`
-of 0x58 with `ntx = 8`, `nrx = 32`.
+The default list (`coeff/seq_init.py`) resets the chips, reads their ID registers and writes the
+configuration. Then it runs the internal zero-scale calibration, starts continuous conversion, pulses SYNC
+and streams. The AD7190 configuration is AIN1/AIN2, REFIN1, reference detect on, buffer on, bipolar and gain
+128. The clock and filter settings are the external clock on MCLK2, sinc4 and FS = 1, with the status byte
+and parity appended to each word. To leave continuous read, run `WAIT_RDY`, then an `XFER` of 0x58 with
+`ntx = 8`, `nrx = 32`.
 
 ### Raw records
 
 CTRL.raw_tap selects the source: 0 ADC code (24 bit, sign-extended), 1 CIC output, 2 after gain/offset, 3
-after trim. Each frame becomes one record of 2 + ceil(`N_CH` / 2) 64-bit words, `tlast` on the last word: 48
-bytes at 8 channels, 272 at 64.
+after trim. Each frame becomes one record of 2 + ceil(`N_CH` / 2) 64-bit words, with `tlast` on the last word.
+A record is 48 bytes at 8 channels and 272 bytes at 64.
 
 | Word | Content |
 |---|---|
-| 0 | [63:16] timestamp, `clk_spi` cycles at the DOUT/RDY edge; [15:14] tap; [13:0] 0 |
-| 1 to ceil(`N_CH` / 2) | Samples `{ch1, ch0}`, `{ch3, ch2}`, ...; `{0, chN-1}` when `N_CH` is odd |
+| 0 | [63:16] timestamp in `clk_spi` cycles at the DOUT/RDY edge, [15:14] tap, [13:0] 0 |
+| 1 to ceil(`N_CH` / 2) | Samples `{ch1, ch0}`, `{ch3, ch2}` and so on, with `{0, chN-1}` last when `N_CH` is odd |
 | last | Fault word: bit k set when channel k had a fault flag in this frame |
 
-At tap 0 the timestamp and fault word belong to the record's own frame. At taps 1 to 3 they come from the
-newest complete frame. A record starts at channel 0 only when the output FIFO has room for it. Records that do
-not fit are skipped whole.
+At tap 0, the timestamp and the fault word belong to the record's own frame. At taps 1 to 3, they come from
+the newest complete frame. The core starts a record at channel 0 only when the output FIFO has room for the
+whole record. Otherwise it skips the record.
 
-Trigger modes (TRIG_CFG[1:0]): 0 continuous while CTRL.raw_enable is set. 1 one-shot of TRIG_CFG[31:16]
-records after CTRL.sw_trigger. 2 one-shot armed by CTRL.sw_trigger, starting at the first frame whose sum
-exceeds TRIG_THRESHOLD. IRQ_STATUS[6] sets when a one-shot ends.
+Trigger modes (TRIG_CFG[1:0]):
+
+- 0: continuous while CTRL.raw_enable is set.
+- 1: a one-shot of TRIG_CFG[31:16] records after CTRL.sw_trigger.
+- 2: a one-shot that CTRL.sw_trigger arms. It starts at the first frame whose sum exceeds TRIG_THRESHOLD.
+
+IRQ_STATUS[6] sets when a one-shot ends.
 
 ### Inference engine
 
-With `USE_NN = 1` the core runs a small neural network on each weigh-in-motion load and corrects the result.
-It starts when a load ends and NN_CTRL.enable is set. Its input is every 4th weight, 256 of them up to the
-load's exit sample (1.7 s), as the deviation from the core's own result: with ref = WIM_SUM / WIM_COUNT, each
-weight x becomes the int8 value (x / ref - 1) x 1024, saturated. In integers: ref is the quotient clamped to
-1 to 2^31 - 1, k is the bit length of ref, R = 2^(k+21) / ref, and q = sat8((d x R + 2^(k+10)) >> (k+11)) with
-d = x - ref clamped to ±2^k. A load that ends while the engine is busy is not run.
+With `USE_NN = 1`, the core runs a small neural network on each weigh-in-motion load and corrects the result.
+The engine starts when a load ends and NN_CTRL.enable is set. It skips a load that ends while it is busy.
 
-The network is a list of one-dimensional convolutions over the valid positions, with int8 weights and
-activations and int32 biases. A dense layer is a convolution whose kernel spans its whole input. Hidden layers
-requantize to int8, (acc x M + 2^(s-1)) >> s with a 15-bit M, clipped at 0 when the layer has a ReLU. The last
-layer's M and s scale its accumulator the same way to NN_CORR, a correction in Q0.20 saturated to 32 bits, and
-NN_EST = ref + (ref x NN_CORR + 2^19) >> 20, saturated to 32 bits. The engine does one multiply-accumulate per `clk_dsp` cycle; the default model takes 44439 cycles
-(0.89 ms at 50 MHz). IRQ_STATUS[7] sets when the result is in the registers.
+The input is every 4th weight up to the load's exit sample: 256 weights, 1.7 s. Each weight x enters as its
+deviation from the core's own result, ref = WIM_SUM / WIM_COUNT. The int8 input value is
+(x / ref - 1) x 1024, saturated. In integers:
 
-Layer list: four words per layer, from NN_LAYER[0] to the layer marked last.
+- ref is the quotient WIM_SUM / WIM_COUNT, clamped to 1 to 2^31 - 1.
+- k is the bit length of ref, and R = 2^(k+21) / ref.
+- d = x - ref, clamped to ±2^k.
+- q = sat8((d x R + 2^(k+10)) >> (k+11)).
+
+The network is a list of one-dimensional convolutions over the valid positions. Weights and activations are
+int8, and biases are int32. A dense layer is a convolution whose kernel spans its whole input. Hidden layers
+requantize to int8 as (acc x M + 2^(s-1)) >> s, with a 15-bit M, and clip at 0 when the layer has a ReLU. The
+last layer's M and s scale its accumulator the same way to NN_CORR, a correction in Q0.20 saturated to 32
+bits. The engine then computes NN_EST = ref + (ref x NN_CORR + 2^19) >> 20, saturated to 32 bits.
+
+The engine does one multiply-accumulate per `clk_dsp` cycle. The default model takes 44439 cycles (0.89 ms at
+50 MHz). IRQ_STATUS[7] sets when the result is in the registers.
+
+The layer list has four words per layer, from NN_LAYER[0] to the layer marked last.
 
 | Word | Fields |
 |---|---|
 | 0 | [31] last, [30] ReLU, [29:26] stride, [25:16] kernel K, [15:8] input channels C, [7:0] output channels O |
 | 1 | [25:16] input length L, [9:0] output length T = (L - K) / stride + 1 |
-| 2 | [21:16] s, 1 to 47; [14:0] M |
+| 2 | [21:16] s, 1 to 47, and [14:0] M |
 | 3 | [31:16] first bias, [15:0] first weight byte |
 
-Weights are in (O, C, K) order. A layer's input and output are stored channel by channel, so C x L and O x T
-must not exceed 1024. The first layer has C = 1 and L = 256. A model has at most 16 layers, 256 biases and
-16384 weight bytes, and every accumulator must fit 48 bits.
+Weights are in (O, C, K) order. The engine stores a layer's input and output channel by channel, so C x L and
+O x T must not exceed 1024. The first layer has C = 1 and L = 256. A model has at most 16 layers, 256 biases
+and 16384 weight bytes. Every accumulator must fit 48 bits.
 
-To load a model: clear NN_CTRL.enable, write NN_LAYER, NN_BIAS and NN_WEIGHT, set NN_CTRL.enable. The memories
-start with the default model in `coeff/nn_*.mem`, a weigh-in-motion correction for single axles on a 0.75 m
-platform with 8 cells. Another installation needs a model trained for it.
+To load a model:
+
+1. Clear NN_CTRL.enable.
+2. Write NN_LAYER, NN_BIAS and NN_WEIGHT.
+3. Set NN_CTRL.enable.
+
+The memories start with the default model in `coeff/nn_*.mem`. It corrects weigh-in-motion results for single
+axles on a 0.75 m platform with 8 cells. Another installation needs a model trained for it.
 
 ### Loopback BIST
 
 With CTRL.loopback set, an AD7190 emulator drives the DOUT inputs. It answers the core's own SCLK, CS and
-SYNC with AD7190 continuous-read timing and sends 32-bit words with a status byte and parity. Channel k sends
+SYNC with AD7190 continuous-read timing. It sends 32-bit words with a status byte and parity. Channel k sends
 `LOOPBACK_VALUE + (k << 16)`, or a frame counter plus `k << 16` in ramp mode. LOOPBACK_CFG injects an ERR bit
-or a parity error on one channel. A checker compares each received word with the emulator's and sets FAULT[k]
-bit 4 on a mismatch. With a constant pattern, software can predict RESULT and the raw records bit for bit
-from the coefficients.
+or a parity error on one channel.
+
+A checker compares each received word with the emulator's word and sets
+FAULT[k] bit 4 on a mismatch. With a constant pattern, software can predict RESULT and the raw records bit for
+bit from the coefficients.
 
 ### Programming sequence
 
-1. Read ID. Check [31:8] = 0x4D4C05 and take `N_CH` from [7:0].
-2. Wait for STATUS[0] (clocks locked) and IRQ_STATUS[5] (sequencer done). After reset the core runs the
+1. Read ID. Check that [31:8] is 0x4D4C05 and take `N_CH` from [7:0].
+2. Wait for STATUS[0] (clocks locked) and IRQ_STATUS[5] (sequencer done). After reset, the core runs the
    default list on its own.
 3. Check the AD7190 ID answers: SEQ_RESP[k] bits [3:0] read 0x4 for each chip k below `N_CH`.
 4. Write OFFSET[k], GAIN[k] and TRIM[k] for each channel.
-5. Optional: write 64 FIR coefficients, pulse CTRL.fir_reload, wait for STATUS[2] (reload_busy) to clear.
+5. Optional: write 64 FIR coefficients, pulse CTRL.fir_reload and wait until STATUS[2] (reload_busy) clears.
    The new set takes over between two samples.
 6. Write IRQ_ENABLE. On the interrupt, read IRQ_STATUS, write the set bits back to clear them, and read
    RESULT and RESULT_SEQ.
@@ -329,39 +355,53 @@ from the coefficients.
 9. Optional, inference: load a model ([Inference engine](#inference-engine)) and set NN_CTRL.enable. On
    IRQ_STATUS[7], NN_EST is the corrected weight of the same load, also in RESULT units.
 
-To rerun the default list or run another one: write it to SEQ, write 1 to IRQ_STATUS[5], pulse
-CTRL.seq_start, wait for IRQ_STATUS[5].
+To rerun the default list or run another one:
 
-Calibration in `sw/common/calib.c`: offsets from 1 s of CIC data at no load, corner trims from a test weight
-placed over each cell in turn (regularized least squares), span from the test weight's mass.
+1. Write the list to SEQ.
+2. Write 1 to IRQ_STATUS[5].
+3. Pulse CTRL.seq_start.
+4. Wait for IRQ_STATUS[5].
+
+The calibration in `sw/common/calib.c` takes the offsets from 1 s of CIC data at no load. It takes the corner
+trims from a test weight placed over each cell in turn (regularized least squares), and the span from the
+test weight's mass.
 
 ### Connecting the AD7190s
 
-- One 4.9152 MHz CMOS oscillator drives MCLK2 on every AD7190; MCLK1 stays open. The chips then convert in
+- One 4.9152 MHz CMOS oscillator drives MCLK2 on every AD7190. MCLK1 stays open. The chips then convert in
   lockstep from the shared SYNC.
-- SCLK, DIN, CS_N and SYNC_N go to every chip. Buffer them for more than a few loads: the reference card
+- SCLK, DIN, CS_N and SYNC_N go to every chip. Buffer them for more than a few loads. The reference card
   drives four chips from one 74AHC244 output.
 - DOUT/RDY of chip k goes to `spi_sdi[k]`.
 - DVDD equals the VCCO of the FPGA bank, or the lines need level translators.
-- Bridge excitation feeds REFIN1(+) and REFIN1(-) for a ratiometric measurement.
+- The bridge excitation feeds REFIN1(+) and REFIN1(-) for a ratiometric measurement.
 - Input filter per channel: 100 Ω in series per line, 0.1 µF across the pair, 0.01 µF from each line to
   AGND (AD7190 data sheet, p. 38).
 
 ## Simulation
 
-Unit tests: cocotb on Icarus Verilog, one folder per RTL module, each checked against a Python model. Each
-test builds its module in `build/tb/<module>/`.
+Each RTL module has a cocotb unit test on Icarus Verilog, in its own folder. Each test checks its module
+against a Python model and builds the module in `build/tb/<module>/`.
 
 ```sh
 python tb/afe_frontend/test_afe_frontend.py         # one module
 for t in tb/*/test_*.py; do python "$t"; done       # all
 ```
 
-System test: `mclp_core` with one AD7190 model per channel, about 420 ms of simulated time. Covers the init
-list, bit-exact records at taps 0 and 3, static weight and stability, the result interrupt, overload, the
-loopback BIST with ERR injection, the burnout and reference self-test, the inference engine on a
-weigh-in-motion load, and FIR reload. Ends with
-`SYSTEM TEST PASSED` or `FAILED`. Runs in the Vivado simulator (Run Simulation in the project) or Icarus:
+The system test runs `mclp_core` with one AD7190 model per channel, for about 420 ms of simulated time. It
+covers:
+
+- the init list
+- bit-exact records at taps 0 and 3
+- static weight, stability and the result interrupt
+- overload
+- the loopback BIST with ERR injection
+- the burnout and reference self-test
+- the inference engine on a weigh-in-motion load
+- FIR reload
+
+It ends with `SYSTEM TEST PASSED` or `FAILED`. It runs in the Vivado simulator (Run Simulation in the
+project) or in Icarus:
 
 ```sh
 mkdir -p build/tb/system && cp coeff/*.mem build/tb/system/
@@ -369,17 +409,17 @@ iverilog -g2012 -s mclp_top_tb -o build/tb/system/sys.vvp tb/system/*.sv rtl/*.s
 cd build/tb/system && vvp -n sys.vvp
 ```
 
-`-P mclp_top_tb.N_CH=64` on the `iverilog` line runs it at another channel count. At 64 channels the run takes
-about 20 minutes.
+`-P mclp_top_tb.N_CH=64` on the `iverilog` line runs it at another channel count. At 64 channels, the run
+takes about 45 minutes.
 
-DMA test: the reference block design with the PS7 verification IP, in the Vivado simulator. It checks the ID,
-then one raw record from the core through the AXI DMA into DDR.
+The DMA test runs the reference block design with the PS7 verification IP in the Vivado simulator. It checks
+the ID, then sends one raw record from the core through the AXI DMA into DDR.
 
 ```sh
 vivado -mode batch -source tcl/mclp.tcl -tclargs --project_name mclp_dma --sim dma --simulate
 ```
 
-Calibration math in `sw/common` (FIR design, corner trim solver, Q2.30, checksum), on the PC:
+The calibration math in `sw/common` (FIR design, corner trim solver, Q2.30, checksum) runs on the PC:
 
 ```sh
 gcc -O2 -Isw/common -o build/test_calib sw/common/test/test_calib.c sw/common/calib.c -lm
@@ -392,9 +432,9 @@ build/test_calib
 
 | Block | Configuration |
 |---|---|
-| `processing_system7_0` | ZC702 preset; FCLK0 100 MHz; GP0, HP0, IRQ_F2P |
+| `processing_system7_0` | ZC702 preset, FCLK0 100 MHz, GP0, HP0, IRQ_F2P |
 | `smartconnect_0` | GP0 to the core's registers and the DMA control port |
-| `axi_dma` | S2MM, scatter-gather; control at 0x4040_0000 |
+| `axi_dma` | S2MM, scatter-gather, control at 0x4040_0000 |
 | `smartconnect_1` | DMA descriptors and data to HP0 |
 | `clk_wiz` | 20 MHz and 50 MHz from FCLK0, reset by the PS reset |
 | `mclp_core_0` | `N_CH = 8`, registers at 0x43C0_0000 |
@@ -413,13 +453,13 @@ Placed and routed, the whole design takes 9783 LUTs, 14190 FFs, 20 block RAM til
 
 ### Set VADJ to 3.3 V
 
-The card uses 3.3 V logic. The ZC702 ships with VADJ at 2.5 V. VADJ supplies PL banks 13, 33, 34 and 35:
-both FMC connectors, the PMOD headers, the HDMI codec interface and the user switches (UG850 Table 1-3).
-Regulator U19 makes VADJ under control of UCD9248 U33, PMBus address 53, rail 1 (UG850 Table 1-30). The setting
-is stored in U33 and needs to be made once per board.
+The card uses 3.3 V logic. The ZC702 ships with VADJ at 2.5 V. VADJ supplies PL banks 13, 33, 34 and 35: both
+FMC connectors, the PMOD headers, the HDMI codec interface and the user switches (UG850 Table 1-3). Regulator
+U19 makes VADJ under the control of UCD9248 U33, PMBus address 53, rail 1 (UG850 Table 1-30). U33 stores the
+setting, so each board needs the change only once.
 
 > [!WARNING]
-> A wrong PMBus write can shut down rails or overvolt the SoC I/O. Change one value at a time and read it back.
+> A wrong PMBus write can disable rails or overvolt the SoC I/O. Change one value at a time and read it back.
 > The absolute maximum VCCO of the Zynq-7000 HR banks is 3.6 V (DS187).
 
 | PMBus value | Factory, 2.5 V | New, 3.3 V |
@@ -429,28 +469,26 @@ is stored in U33 and needs to be made once per board.
 | POWER_GOOD_ON | 2.25 V | 2.97 V |
 | POWER_GOOD_OFF | 2.125 V | 2.805 V |
 
-Factory values from UG850 Table 1-32. The new power-good thresholds keep the factory ratios, 0.90 and 0.85 of
-nominal. Scale the OV warn, UV warn, UV fault and margin limits by 3.3/2.5 and keep OV warn below 3.6 V.
-VOUT_MAX must be 3.3 V or higher.
+The factory values are from UG850 Table 1-32. The new power-good thresholds keep the factory ratios, 0.90 and
+0.85 of nominal. Scale the OV warn, UV warn, UV fault and margin limits by 3.3/2.5, and keep OV warn below
+3.6 V. VOUT_MAX must be 3.3 V or higher.
 
-1. Power the board off. Leave jumper J12 installed (factory default). With J12 installed, U33 turns VADJ on at
-   power-up.
+1. Power the board off. Leave jumper J12 installed (factory default), so that U33 turns VADJ on at power-up.
 2. Connect the TI adapter to PMBus header J59 and to the PC.
-3. Power the board on and start Fusion Digital Power Designer. The Fusion Manufacturing tool from the same
-   suite fails to configure the ZC702 controllers (TI E2E).
+3. Power the board on and start Fusion Digital Power Designer.
 4. Scan the bus. Fusion finds three UCD9248 controllers, at addresses 52, 53 and 54. Select address 53, rail 1.
-5. Raise the limits ahead of the output: margin high and low, OV warn and OV fault, VOUT_COMMAND, then UV warn,
+5. Raise the limits before the output: margin high and low, OV warn and OV fault, VOUT_COMMAND, then UV warn,
    UV fault and the power-good thresholds. Click Write to Hardware after each change.
-6. Click Store RAM to Flash. Values left in RAM are lost at the next power cycle.
+6. Click Store RAM to Flash.
 7. Power-cycle the board. Check 3.3 V in the Fusion monitor view and with a meter.
 
-To return to 2.5 V, apply the factory values in reverse order: power-good and UV thresholds, VOUT_COMMAND,
+To return to 2.5 V, apply the factory values in reverse order: the power-good and UV thresholds, VOUT_COMMAND,
 then the OV limits. Store to flash.
 
 Without the TI adapter, PS software can set VADJ at every boot. With J12 removed, VADJ stays off at power-up.
-The software writes the U33 values over PMBus, then pulls FMC_VADJ_ON_B low through the TCA6416 port expander
-U80, pin 13, behind the PCA9548 I2C switch (UG850, VADJ Voltage Control). The repository does not implement
-it.
+The software writes the U33 values over PMBus. Then it pulls FMC_VADJ_ON_B low through pin 13 of the TCA6416
+port expander U80, behind the PCA9548 I2C switch (UG850, VADJ Voltage Control). The repository does not
+implement this.
 
 ### FMC pinout
 
@@ -471,15 +509,15 @@ The card plugs into FMC1 (J3, LPC). All 12 signals are in bank 34, LVCMOS33.
 | `spi_sdi[6]` | in | LA05_P | D11 | N17 |
 | `spi_sdi[7]` | in | LA05_N | D12 | N18 |
 
-Card power: AD7190 DVDD from the FMC VADJ pins (G39, H40). 5 V AVDD and bridge excitation regulated from
-VCC12_P (C35, C37): 6.75 mA per AD7190 (data sheet maximum, gain 128, buffer on) plus 15 mA per 350 Ω bridge,
-174 mA for eight channels.
+The AD7190 DVDD comes from the FMC VADJ pins (G39, H40). The card regulates the 5 V AVDD and the bridge
+excitation from VCC12_P (C35, C37). The load is 6.75 mA per AD7190 (data sheet maximum, gain 128, buffer on)
+plus 15 mA per 350 Ω bridge, 174 mA for eight channels.
 
 Load cell k connects to AD7190 k (AIN1/AIN2). The corner calibration refers to the cells by these numbers.
 
 ### Prebuilt images
 
-Files in each release:
+Each release has these files:
 
 | File | Content |
 |---|---|
@@ -489,10 +527,13 @@ Files in each release:
 | `rootfs.tar.gz` | Root file system with `mclp`, `mclpd`, the boot script and their settings |
 | `system.dtb` | Device tree alone, for a custom kernel or boot setup (`image.ub` has a copy) |
 
-The SD card has a FAT32 boot partition and an ext4 root partition. Calibration and settings are stored on the
-ext4 partition and survive a power cycle. Prepare the card on a Linux PC. `lsblk` shows its device name:
-`/dev/sdX` on a USB reader, `/dev/mmcblk0` with partitions `p1` and `p2` on a built-in reader. The commands
-erase the device they are given.
+The SD card has a FAT32 boot partition and an ext4 root partition. The software stores calibration and
+settings on the ext4 partition, so they survive a power cycle. Prepare the card on a Linux PC. `lsblk` shows
+its device name: `/dev/sdX` on a USB reader, or `/dev/mmcblk0` with partitions `p1` and `p2` on a built-in
+reader.
+
+> [!WARNING]
+> These commands erase the device that you give them.
 
 ```sh
 sudo parted -s /dev/sdX mklabel msdos mkpart primary fat32 4MiB 516MiB mkpart primary ext4 516MiB 100% set 1 boot on
@@ -507,8 +548,9 @@ sudo mount /dev/sdX2 /mnt && sudo tar -xzpf rootfs.tar.gz -C /mnt && sudo umount
 3. Insert the card and power on. Log in as `petalinux`. The first login asks for a new password, which `sudo`
    then uses.
 
-At boot, `/etc/init.d/mclp` loads the UIO driver and runs `mclp init`: ID check, calibration load, AD7190
-power-up list. The boot log shows the eight chip IDs. Then it starts `mclpd`. First checks on the board:
+At boot, `/etc/init.d/mclp` loads the UIO driver and runs `mclp init`: ID check, calibration load and the
+AD7190 power-up list. The boot log shows the eight chip IDs. Then the script starts `mclpd`. First checks on
+the board:
 
 ```sh
 sudo mclp status        # ID 4D4C0508, clocks locked, sequencer streaming
@@ -521,8 +563,11 @@ and MQTT).
 
 ### Build from source
 
-Tools: Vivado 2025.1; PetaLinux 2025.1 on a Linux host or Vitis 2025.1 for bare metal; Python 3, cocotb 2.x
-and Icarus Verilog 12 for the tests.
+Tools:
+
+- Vivado 2025.1
+- PetaLinux 2025.1 on a Linux host, or Vitis 2025.1 for bare metal
+- Python 3, cocotb 2.x and Icarus Verilog 12 for the tests
 
 Vivado project, bitstream and hardware description (XSA):
 
@@ -531,9 +576,9 @@ vivado -mode batch -source tcl/mclp.tcl
 vivado build/mclp/mclp.xpr
 ```
 
-`tcl/mclp.tcl` packages the core into `build/ip_repo`, creates the project in `build/`, adds `xdc/` and sources
-every `tcl/*_bd.tcl`. The top is `mclp_top_wrapper`. `rtl/`, `tb/system/` and `coeff/*.mem` go into the
-simulation set. Delete `build/` to start over.
+`tcl/mclp.tcl` packages the core into `build/ip_repo` and creates the project in `build/`. It adds `xdc/` and
+sources every `tcl/*_bd.tcl`. The top is `mclp_top_wrapper`. The simulation set gets `rtl/`, `tb/system/` and
+`coeff/*.mem`. Delete `build/` to start over.
 
 | Option, after `-tclargs` | Default |
 |---|---|
@@ -561,30 +606,41 @@ vitis -s sw/baremetal/build.py          # Vitis workspace in build/vitis, writes
 ```
 
 Run it over JTAG (SW16 all 0) with `xsdb build/vitis/jtag.tcl`, or from an SD card (SW16 positions 3 and 4 at
-1) holding `build/sd/BOOT.BIN`. The console prompt is `mclp>` on the USB-UART at 115200 8N1.
+1) that holds `build/sd/BOOT.BIN`. The console prompt is `mclp>` on the USB-UART at 115200 8N1.
 
 ## Porting
 
 ### Another channel count in the reference design
 
-Set `N_CH` on `mclp_core_0`, make the `spi_sdi` port as wide (port property `LEFT`), give every `spi_sdi` bit
-a pin in `xdc/mclp_pins.xdc`, and export the block design with `write_bd_tcl -force tcl/mclp_top_bd.tcl`.
-`mclp` and `mclpd` read `N_CH` from the ID register. A calibration stored for another channel count is not
-loaded.
+1. Set `N_CH` on `mclp_core_0`.
+2. Make the `spi_sdi` port as wide (port property `LEFT`).
+3. Give every `spi_sdi` bit a pin in `xdc/mclp_pins.xdc`.
+4. Export the block design with `write_bd_tcl -force tcl/mclp_top_bd.tcl`.
+
+`mclp` and `mclpd` read `N_CH` from the ID register. They do not load a calibration stored for another channel
+count.
 
 ### Another Zynq-7000 board
 
 1. Set `part` and `board_part` at the top of `tcl/mclp.tcl`.
 2. Regenerate the PS7 configuration (DDR timing, MIO, clocks): open the block design, run block automation
-   with the board preset, keep the PL-side ports, export with `write_bd_tcl`.
+   with the board preset, keep the PL-side ports and export with `write_bd_tcl`.
 3. Map the 12 ADC signals to the board's pins in `xdc/`. Bank VCCO must equal the card's DVDD.
 4. FCLK0 is 100 MHz. Another FCLK0 needs the matching input frequency on `clk_wiz`.
 
 ### Zynq UltraScale+ MPSoC
 
-Replace `processing_system7` with `zynq_ultra_ps_e` and remap: M_AXI_GP0 to M_AXI_HPM0_FPD, S_AXI_HP0 to
-S_AXI_HP0_FPD, IRQ_F2P to pl_ps_irq0, FCLK_CLK0 to pl_clk0. The register window moves into the HPM0_FPD
-address range. HP I/O banks stop at 1.8 V. Put the ADC signals on HD banks (up to 3.3 V) or add translators.
+Replace `processing_system7` with `zynq_ultra_ps_e` and remap its ports:
+
+| Zynq-7000 | Zynq UltraScale+ |
+|---|---|
+| M_AXI_GP0 | M_AXI_HPM0_FPD |
+| S_AXI_HP0 | S_AXI_HP0_FPD |
+| IRQ_F2P | pl_ps_irq0 |
+| FCLK_CLK0 | pl_clk0 |
+
+The register window moves into the HPM0_FPD
+address range. HP I/O banks stop at 1.8 V, so put the ADC signals on HD banks (up to 3.3 V) or add translators.
 
 ### FPGA without a hard processor
 
@@ -592,8 +648,8 @@ Drive `s_axi` from MicroBlaze or a host bridge (UART, PCIe). Point the AXI DMA a
 
 ### Carriers with a fixed VADJ
 
-VITA 57.1 lets the carrier set VADJ, and many carriers fix it at 1.8 V or 2.5 V. On those, the ADC card needs
-level translators powered from VADJ on the FPGA side and 3.3 V on the AD7190 side.
+VITA 57.1 lets the carrier set VADJ, and many carriers fix it at 1.8 V or 2.5 V. On those carriers, the ADC
+card needs level translators, powered from VADJ on the FPGA side and from 3.3 V on the AD7190 side.
 
 ## Source files
 
@@ -638,8 +694,8 @@ docs/architecture.drawio  Block diagram with instance names and clock-domain cro
 
 ### Changing the design
 
-- Block design: edit it in Vivado, then `write_bd_tcl -force tcl/mclp_top_bd.tcl`. A new block design goes in
-  `tcl/<name>_bd.tcl`.
-- Core RTL, constraints, test benches: add the file to its folder and rerun `tcl/mclp.tcl`, which packages the
+- Block design: edit it in Vivado, then run `write_bd_tcl -force tcl/mclp_top_bd.tcl`. A new block design
+  goes in `tcl/<name>_bd.tcl`.
+- Core RTL, constraints, test benches: add the file to its folder and rerun `tcl/mclp.tcl`. It packages the
   core again.
 - Default sequencer list: edit `coeff/seq_init.py` and run it.
