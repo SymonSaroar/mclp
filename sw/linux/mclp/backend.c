@@ -202,7 +202,7 @@ static void sim_delay_us(uint32_t us)
 
 backend_t sim_backend = {
 	.name = "co-simulation", .rd = sim_rd, .wr = sim_wr, .now_us = sim_now_us, .delay_us = sim_delay_us,
-	.store = file_store, .fetch = file_fetch, .store_name = "mclp-sim.cal",
+	.store = file_store, .fetch = file_fetch, .store_name = "mclp-sim.cal", .read_file = file_read,
 	.ring_phys = SIM_RING_PHYS, .ring_bytes = RING_BYTES, .barrier = no_barrier,
 };
 

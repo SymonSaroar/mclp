@@ -275,6 +275,25 @@ if cocotb:
 
         out = await client(bench, srv, port, "faults", "clear")
         assert all(f"ch{c}: -" in out for c in range(8))
+
+        out = await client(bench, srv, port, "nn")
+        crc = re.search(r"inference engine off; model: 5 layers, CRC-32 ([0-9A-F]{8})", out)
+        assert crc and "no inference result yet" in out, "nn: the bitstream's default model"
+        out = await client(bench, srv, port, "nn", "load", str(ROOT / "coeff" / "nn"))
+        assert "model loaded" in out and f"CRC-32 {crc.group(1)}" in out, "nn load writes and reads back the model"
+        await client(bench, srv, port, "zero")
+        await client(bench, srv, port, "wim", "25600000", "12800000", "0.93")   # counts: half the step below
+        await client(bench, srv, port, "nn", "on")
+        bench.set_inputs(samples=[s + 200_000 for s in SAMPLES])
+        log("ADC inputs: a load of 200000 codes on every channel")
+        await Timer(60, "ms")
+        bench.set_inputs(samples=SAMPLES)
+        log("ADC inputs: the load leaves")
+        await Timer(120, "ms")
+        out = await client(bench, srv, port, "nn")
+        assert "inference engine on" in out and re.search(r"inference 1: +-?\d+ counts, correction [+-]\d", out), out
+        out = await client(bench, srv, port, "wim")
+        assert "weigh-in-motion:" in out and "inference 1:" in out
         srv.close()
         log("all mclp flows passed")
 
@@ -310,8 +329,8 @@ def build_client():
 def run(testcase, extra_env=None, waves=False):
     from cocotb_tools.runner import get_runner
     build_client()
-    for f in ("fir64.mem", "seq_init.mem", "unity64.mem"):
-        shutil.copy(ROOT / "coeff" / f, BUILD)
+    for f in (ROOT / "coeff").glob("*.mem"):            # the RAM images, including the default model
+        shutil.copy(f, BUILD)
     sources = sorted((ROOT / "rtl").glob("*.sv")) + [ROOT / "tb/system" / f for f in (
         "mclp_top_wrapper_stub.sv", "ad7190_model.sv")] + \
         [ROOT / "tb/common/xpm_models.sv", ROOT / "tb/cosim/cosim_top.sv"]
