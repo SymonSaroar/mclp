@@ -1,4 +1,4 @@
-# Packages mclp_core (rtl/, with the RAM images in coeff/) as the Vivado IP mclp:ip:mclp_core:1.0 in
+# Packages mclp_core (rtl/, with the RAM images in coeff/) as the Vivado IP mclp:ip:mclp_core:2.0 in
 # <build_dir>/ip_repo/mclp_core. To use it in another project, add <build_dir>/ip_repo to the project's IP
 # repositories (Settings > IP > Repository).
 #
@@ -36,7 +36,7 @@ set core [ipx::current_core]
 set_property -dict [list \
 	display_name  {MCLP load-cell core} \
 	description   {AD7190 front end, decimation, per-cell gain/offset/trim, sum, FIR, weight, stability, weigh-in-motion, raw capture} \
-	version       1.0 \
+	version       2.0 \
 	core_revision 1 \
 ] $core
 # AMD families with the XPM macros the core uses
@@ -111,4 +111,4 @@ ipx::update_checksums $core
 ipx::check_integrity $core
 ipx::save_core $core
 close_project
-puts "Packaged mclp:ip:mclp_core:1.0 in $ip_root"
+puts "Packaged mclp:ip:mclp_core:2.0 in $ip_root"

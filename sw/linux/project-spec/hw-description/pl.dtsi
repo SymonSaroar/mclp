@@ -81,7 +81,7 @@
 			};
 		};
 		mclp_core_0: mclp_core@43c00000 {
-			compatible = "xlnx,mclp-core-1.0";
+			compatible = "xlnx,mclp-core-2.0";
 			interrupts = < 0 30 4 >;
 			xlnx,n-ch = <8>;
 			interrupt-parent = <&intc>;

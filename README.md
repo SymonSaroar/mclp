@@ -67,7 +67,7 @@ In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi`
 
 ### Add the core to a Vivado project
 
-1. Get the packaged core. Download `mclp_core-1.0.zip` from the [releases page](../../releases) and unzip it,
+1. Get the packaged core. Download `mclp_core-2.0.zip` from the [releases page](../../releases) and unzip it,
    or package it from this repository:
 
    ```sh
@@ -275,14 +275,15 @@ exceeds TRIG_THRESHOLD. IRQ_STATUS[6] sets when a one-shot ends.
 With `USE_NN = 1` the core runs a small neural network on each weigh-in-motion load and corrects the result.
 It starts when a load ends and NN_CTRL.enable is set. Its input is every 4th weight, 256 of them up to the
 load's exit sample (1.7 s), as the deviation from the core's own result: with ref = WIM_SUM / WIM_COUNT, each
-weight x becomes the int8 value (x / ref - 1) x 1024, saturated. A load that ends while the engine is busy is
-not run.
+weight x becomes the int8 value (x / ref - 1) x 1024, saturated. In integers: ref is the quotient clamped to
+1 to 2^31 - 1, k is the bit length of ref, R = 2^(k+21) / ref, and q = sat8((d x R + 2^(k+10)) >> (k+11)) with
+d = x - ref clamped to ±2^k. A load that ends while the engine is busy is not run.
 
 The network is a list of one-dimensional convolutions over the valid positions, with int8 weights and
 activations and int32 biases. A dense layer is a convolution whose kernel spans its whole input. Hidden layers
 requantize to int8, (acc x M + 2^(s-1)) >> s with a 15-bit M, clipped at 0 when the layer has a ReLU. The last
-layer gives NN_CORR, a correction in Q0.20, and NN_EST = ref + (ref x NN_CORR + 2^19) >> 20, both saturated to
-32 bits. The engine does one multiply-accumulate per `clk_dsp` cycle; the default model takes 44439 cycles
+layer's M and s scale its accumulator the same way to NN_CORR, a correction in Q0.20 saturated to 32 bits, and
+NN_EST = ref + (ref x NN_CORR + 2^19) >> 20, saturated to 32 bits. The engine does one multiply-accumulate per `clk_dsp` cycle; the default model takes 44439 cycles
 (0.89 ms at 50 MHz). IRQ_STATUS[7] sets when the result is in the registers.
 
 Layer list: four words per layer, from NN_LAYER[0] to the layer marked last.
@@ -295,7 +296,8 @@ Layer list: four words per layer, from NN_LAYER[0] to the layer marked last.
 | 3 | [31:16] first bias, [15:0] first weight byte |
 
 Weights are in (O, C, K) order. A layer's input and output are stored channel by channel, so C x L and O x T
-must not exceed 1024. The first layer has C = 1 and L = 256.
+must not exceed 1024. The first layer has C = 1 and L = 256. A model has at most 16 layers, 256 biases and
+16384 weight bytes, and every accumulator must fit 48 bits.
 
 To load a model: clear NN_CTRL.enable, write NN_LAYER, NN_BIAS and NN_WEIGHT, set NN_CTRL.enable. The memories
 start with the default model in `coeff/nn_*.mem`, a weigh-in-motion correction for single axles on a 0.75 m
@@ -322,6 +324,10 @@ from the coefficients.
 6. Write IRQ_ENABLE. On the interrupt, read IRQ_STATUS, write the set bits back to clear them, and read
    RESULT and RESULT_SEQ.
 7. Convert RESULT to mass in software: `(RESULT - zero) * span`.
+8. Optional, weigh-in-motion: write WIM_ENTER, WIM_EXIT and WIM_LEVEL. On IRQ_STATUS[2], WIM_SUM / WIM_COUNT is
+   the load's weight in RESULT units.
+9. Optional, inference: load a model ([Inference engine](#inference-engine)) and set NN_CTRL.enable. On
+   IRQ_STATUS[7], NN_EST is the corrected weight of the same load, also in RESULT units.
 
 To rerun the default list or run another one: write it to SEQ, write 1 to IRQ_STATUS[5], pulse
 CTRL.seq_start, wait for IRQ_STATUS[5].
@@ -613,7 +619,7 @@ rtl/raw_capture.sv        Raw records and triggers
 coeff/fir64.py            Default FIR coefficients, writes fir64.mem
 coeff/seq_init.py         Default sequencer list and unity gain image: seq_init.mem, unity64.mem, sw/common/seq_init.h
 coeff/nn_*.mem            Default inference model: layer list, biases, weights
-tcl/package_ip.tcl        Packages the core as mclp:ip:mclp_core:1.0
+tcl/package_ip.tcl        Packages the core as mclp:ip:mclp_core:2.0
 tcl/mclp.tcl              Vivado project of the reference design
 tcl/mclp_top_bd.tcl       Reference block design
 xdc/mclp_pins.xdc         ZC702 pins
