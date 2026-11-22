@@ -27,6 +27,8 @@ typedef struct {
 	void     (*barrier)(void);                    /* descriptors visible to the DMA */
 	void     (*lock)(void);                       /* Linux: hardware shared by the console and mclpd; */
 	void     (*unlock)(void);                     /* NULL where one program owns it (bare metal) */
+	int      (*read_file)(const char *path, char *buf, unsigned max);  /* bytes read, <0 on error */
+	const char *nn_model;                         /* model init loads if present: <nn_model>_layers.mem, ... */
 } backend_t;
 
 typedef struct {
@@ -82,6 +84,9 @@ typedef struct {
 	uint32_t wim_n;                               /* samples in the last weigh-in-motion result, 0 if none */
 	uint64_t wim_sum;                             /* raw, to tell a new result from the last one */
 	double   wim_value;
+	uint32_t nn_seq;                              /* NN_SEQ: changes with every inference; 0 without one */
+	double   nn_value;                            /* corrected weigh-in-motion estimate, like wim_value */
+	double   nn_corr;                             /* the correction, as a fraction */
 } reading_t;
 
 void console_reading(reading_t *r);

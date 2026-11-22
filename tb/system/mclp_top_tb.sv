@@ -1,16 +1,19 @@
 // System test of mclp_core inside mclp_top_wrapper_stub.sv, the stand-in for the reference block design (PS
 // clock and AXI4-Lite master, ideal MMCM, raw record sink); N_CH AD7190 models run at the nominal 4.9152 MHz MCLK (4800 SPS).
-// About 180 ms of simulated time. N_CH (default 8, the reference design) is set with iverilog -P.
+// About 420 ms of simulated time. N_CH (default 8, the reference design) is set with iverilog -P.
 // Scenarios: init list and ID; raw capture at tap 0 (bit-exact); gain and trim at tap 3 (bit-exact);
 // static weight, stability and the result interrupt; overload; loopback BIST with ERR injection;
-// AD7190 self-test (open wire with burnout currents, missing reference); FIR coefficient reload.
+// AD7190 self-test (open wire with burnout currents, missing reference); inference engine on a weigh-in-motion
+// load; FIR coefficient reload.
 `timescale 1ns / 1ps
 module mclp_top_tb #(
 	parameter integer N_CH = 8
 );
 	localparam [11:0] CTRL = 12'h004, STATUS = 12'h008, IRQ_ST = 12'h00C, IRQ_EN = 12'h010,
 		RESULT = 12'h020, RESULT_SEQ = 12'h024, STAB_COUNT = 12'h038, DECIM = 12'h048, LB_CFG = 12'h054,
-		FIRMEM = 12'h200, SEQMEM = 12'h400, SEQRESP = 12'h800, GAIN = 12'h900, TRIM = 12'hB00, FAULT = 12'hC00;
+		FIRMEM = 12'h200, SEQMEM = 12'h400, SEQRESP = 12'h800, GAIN = 12'h900, TRIM = 12'hB00, FAULT = 12'hC00,
+		WIM_SUM_LO = 12'h028, WIM_SUM_HI = 12'h02C, WIM_COUNT = 12'h030, WIM_ENTER = 12'h03C, WIM_EXIT = 12'h040;
+	localparam [15:0] NN_CTRL = 16'h1000, NN_SEQ = 16'h1008, NN_EST = 16'h100C, NN_CORR = 16'h1010;
 	localparam integer REC   = 2 + (N_CH + 1) / 2;          // record words: header, sample pairs, faults
 	localparam integer SHIFT = 20 + $clog2(N_CH);           // weight = FIR >> SHIFT
 	// channels the scenarios use, kept inside N_CH
@@ -30,6 +33,16 @@ module mclp_top_tb #(
 	integer     errors = 0;
 
 	mclp_top_wrapper #(.N_CH(N_CH)) dut (.spi_sclk(sclk), .spi_sdo(din), .spi_cs_n(cs_n), .adc_sync_n(sync_n), .spi_sdi(dout));
+
+	// The weight stream as the inference engine should see it: the FIR output since reset, in a ring like its own
+	reg signed [31:0] w_ring [0:1023];
+	reg   [9:0]       w_rp = 0;
+	initial for (int i = 0; i < 1024; i++) w_ring[i] = 0;    // zero, as the engine's ring starts
+	always @(posedge dut.mclp_core_0.clk_dsp)
+		if (dut.mclp_core_0.mclp_dsp_0.fir_valid) begin
+			w_ring[w_rp] <= dut.mclp_core_0.mclp_dsp_0.weight;
+			w_rp         <= w_rp + 1'b1;
+		end
 
 	for (genvar k = 0; k < N_CH; k++) begin : g_adc
 		ad7190_model u_adc (
@@ -96,7 +109,7 @@ module mclp_top_tb #(
 	endtask
 
 	initial begin : watchdog
-		ms(600);
+		ms(700);
 		$fatal(1, "watchdog: test did not finish");
 	end
 
@@ -228,6 +241,44 @@ module mclp_top_tb #(
 		for (int i = 0; i < 10; i++) prog[i] = init_list[i];
 		run_prog(10, EN);
 		ms(3);
+
+		// ---- inference engine: a load on and off the platform with weigh-in-motion and NN_CTRL.enable set. The
+		// engine must see the FIR output and the WIM result, and its result must reach the NN registers and
+		// IRQ_STATUS[7]; its arithmetic on those inputs is checked bit for bit in tb/mclp_nn.
+		ms(110);                                     // FIR settled on the samples restored above
+		rd(RESULT, r0);
+		expect_w = (256 * N_CH * 200_000) >>> $clog2(N_CH);   // weight step for 200000 codes on every channel
+		wr(WIM_ENTER, r0 + expect_w / 2);
+		wr(WIM_EXIT, r0 + expect_w / 4);
+		wr(NN_CTRL, 1);
+		wr(IRQ_ST, 32'hFF);
+		for (int k = 0; k < N_CH; k++) sample[k] += 200_000;
+		ms(60);
+		for (int k = 0; k < N_CH; k++) sample[k] -= 200_000;
+		for (int i = 0; i < 100; i++) begin
+			rd(NN_SEQ, v);
+			if (v == 0) ms(1);
+		end
+		check(v == 1, $sformatf("one inference after the load (NN_SEQ %0d)", v));
+		rd(IRQ_ST, v);
+		check(v[7], "inference interrupt status");
+		rd(WIM_SUM_LO, r);
+		rd(WIM_SUM_HI, v);
+		rd(WIM_COUNT, seq0);
+		check(dut.mclp_core_0.mclp_dsp_0.g_nn.mclp_nn_0.ref_v == ($signed({v, r}) / seq0),
+		      $sformatf("engine reference = WIM_SUM / WIM_COUNT (%0d)", $signed({v, r}) / seq0));
+		d = 0;
+		for (int i = 0; i < 1024; i++)
+			d += dut.mclp_core_0.mclp_dsp_0.g_nn.mclp_nn_0.ring[i] !== w_ring[i];
+		check(d == 0 && dut.mclp_core_0.mclp_dsp_0.g_nn.mclp_nn_0.rp == w_rp, "engine ring = the FIR output");
+		rd(NN_EST, v);
+		rd(NN_CORR, r);
+		check(v == dut.mclp_core_0.mclp_dsp_0.g_nn.mclp_nn_0.est && r == dut.mclp_core_0.mclp_dsp_0.g_nn.mclp_nn_0.corr,
+		      $sformatf("NN_EST %0d, NN_CORR %0d (Q0.20) as the engine computed them", $signed(v), $signed(r)));
+		wr(NN_CTRL, 0);
+		wr(WIM_ENTER, 32'h7FFF_FFFF);
+		wr(WIM_EXIT, 32'h7FFF_FFFF);
+		wr(IRQ_ST, 32'hFF);
 
 		// ---- FIR reload: one tap of 2^16 at RAM word 0, so the weight is 256 X 2^16 >> SHIFT, delayed by
 		// the position that word 0 takes in the filter. mclp_fir reloads in coefficient order, so word 0 must act

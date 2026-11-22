@@ -5,14 +5,15 @@
  *
  * REST (HTTP basic authentication over HTTPS; accounts in /etc/mclp/users, one "name:role:hash" per line,
  * role viewer or operator, hash from `openssl passwd -6`):
- *   GET  /api/v1/weight     net weight, unit, stable, overload, last weigh-in-motion result
+ *   GET  /api/v1/weight     net weight, unit, stable, overload, last weigh-in-motion and inference results
  *   GET  /api/v1/faults     sticky fault flags per channel
- *   GET  /api/v1/settings   calibration, filter, stability and weigh-in-motion settings
+ *   GET  /api/v1/settings   calibration, filter, stability, weigh-in-motion and inference settings
  *   POST /api/v1/cmd        {"cmd": "<console command>"}: viewers may run the commands that only read
  *
  * MQTT (client of the configured broker), topics under <prefix>/<device>/:
  *   weight   every RESULT update, at most publish_hz per second (QoS 0)
  *   wim      each new weigh-in-motion result (QoS 1)
+ *   inference each new result of the inference engine, the corrected weigh-in-motion estimate (QoS 1)
  *   faults   per-channel flags, on change (QoS 1, retained)
  *   status   "online", or "offline" as the last will (QoS 1, retained)
  *   cmd      subscribed: a console command line; the reply goes to cmd/result (QoS 1). The broker's ACLs
@@ -116,7 +117,7 @@ static int auth(const char *user, const char *pass)
 static int read_only(int argc, char **argv)
 {
 	static const char *any[]  = { "help", "status", "info", "w" };
-	static const char *bare[] = { "wim", "faults", "stab", "decim", "fir", "cal" };
+	static const char *bare[] = { "wim", "nn", "faults", "stab", "decim", "fir", "cal" };
 	for (unsigned i = 0; i < sizeof any / sizeof any[0]; i++)
 		if (!strcmp(argv[0], any[i]))
 			return 1;
@@ -187,6 +188,18 @@ static cJSON *wim_json(const reading_t *r)
 	return o;
 }
 
+static cJSON *nn_json(const reading_t *r)
+{
+	if (!r->nn_seq)
+		return cJSON_CreateNull();
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddNumberToObject(o, "value", r->nn_value);
+	cJSON_AddStringToObject(o, "unit", r->spanned ? "kg" : "counts");
+	cJSON_AddNumberToObject(o, "correction", r->nn_corr);
+	cJSON_AddNumberToObject(o, "seq", r->nn_seq);
+	return o;
+}
+
 static cJSON *weight_json(const reading_t *r, int with_wim)
 {
 	cJSON *o = cJSON_CreateObject();
@@ -196,8 +209,10 @@ static cJSON *weight_json(const reading_t *r, int with_wim)
 	cJSON_AddBoolToObject(o, "overload", r->overload);
 	cJSON_AddNumberToObject(o, "seq", r->seq);
 	cJSON_AddNumberToObject(o, "time_ms", now_ms());
-	if (with_wim)
+	if (with_wim) {
 		cJSON_AddItemToObject(o, "wim", wim_json(r));
+		cJSON_AddItemToObject(o, "nn", nn_json(r));
+	}
 	return o;
 }
 
@@ -251,6 +266,8 @@ static cJSON *settings_json(void)
 		cJSON_AddNumberToObject(w, "exit", c.wim_exit * k);
 		cJSON_AddNumberToObject(w, "level", c.wim_level / 65536.0);
 	}
+	cJSON *nn = cJSON_AddObjectToObject(o, "nn");
+	cJSON_AddBoolToObject(nn, "enabled", c.nn_enable != 0);
 	cJSON *off = cJSON_AddArrayToObject(o, "offset"), *g = cJSON_AddArrayToObject(o, "gain");
 	cJSON *t = cJSON_AddArrayToObject(o, "trim");
 	for (int ch = 0; ch < n_ch; ch++) {
@@ -565,6 +582,8 @@ int main(int argc, char **argv)
 			}
 			if (r.wim_n && (r.wim_n != last.wim_n || r.wim_sum != last.wim_sum))
 				publish("wim", json_string(wim_json(&r)), 1, 0);
+			if (r.nn_seq && r.nn_seq != last.nn_seq)
+				publish("inference", json_string(nn_json(&r)), 1, 0);
 		}
 		last = r;
 	}

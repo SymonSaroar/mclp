@@ -7,6 +7,7 @@
 extern const char *cal_path;                  /* /etc/mclp/mclp.cal */
 int file_store(const void *p, unsigned n);
 int file_fetch(void *p, unsigned n);
+int file_read(const char *path, char *buf, unsigned max);
 
 extern backend_t sim_backend;                 /* co-simulation server; getc is left to the program */
 int  sim_open(const char *hostport);          /* 0, or -1 with a message on stderr */

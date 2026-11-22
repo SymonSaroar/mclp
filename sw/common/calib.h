@@ -12,7 +12,7 @@
 #define CAL_CH       MAX_CH      /* record arrays; n_ch of them in use */
 #define CAL_TAPS     64
 #define CAL_MAGIC    0x4C414357u   /* "WCAL" */
-#define CAL_VERSION  5u            /* layout of cal_t; a record of another version is not loaded */
+#define CAL_VERSION  6u            /* layout of cal_t; a record of another version is not loaded */
 
 typedef struct {
 	uint32_t magic, version;
@@ -26,6 +26,7 @@ typedef struct {
 	uint32_t stab_count;           /* results at 600 Hz */
 	int32_t  wim_enter, wim_exit;  /* RESULT counts above zero; INT32_MAX disables */
 	uint32_t wim_level;            /* Q0.16: a sample counts at or above this share of the load's peak */
+	uint32_t nn_enable;            /* inference engine runs after each weigh-in-motion result */
 	uint32_t decim;                /* RESULT rate = 600 Hz / decim */
 	double   fir_fc;               /* FIR low-pass cutoff, Hz */
 	double   tare;                 /* RESULT counts above zero, subtracted from the reading */

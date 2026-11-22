@@ -351,9 +351,10 @@ python tb/afe_frontend/test_afe_frontend.py         # one module
 for t in tb/*/test_*.py; do python "$t"; done       # all
 ```
 
-System test: `mclp_core` with one AD7190 model per channel, about 180 ms of simulated time. Covers the init
+System test: `mclp_core` with one AD7190 model per channel, about 420 ms of simulated time. Covers the init
 list, bit-exact records at taps 0 and 3, static weight and stability, the result interrupt, overload, the
-loopback BIST with ERR injection, the burnout and reference self-test, and FIR reload. Ends with
+loopback BIST with ERR injection, the burnout and reference self-test, the inference engine on a
+weigh-in-motion load, and FIR reload. Ends with
 `SYSTEM TEST PASSED` or `FAILED`. Runs in the Vivado simulator (Run Simulation in the project) or Icarus:
 
 ```sh

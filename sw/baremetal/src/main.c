@@ -77,10 +77,23 @@ static int bm_fetch(void *p, unsigned n)
 	return (r == FR_OK && br == n) ? 0 : -3;
 }
 
+static int bm_read_file(const char *path, char *buf, unsigned max)
+{
+	UINT br = 0;
+	if (f_mount(&fatfs, "0:/", 1) != FR_OK)
+		return -1;
+	if (f_open(&file, path, FA_READ) != FR_OK)
+		return -2;
+	FRESULT r = f_read(&file, buf, max, &br);
+	f_close(&file);
+	return r == FR_OK ? (int)br : -3;
+}
+
 static backend_t baremetal = {
 	.name = "standalone", .rd = bm_rd, .wr = bm_wr, .now_us = bm_now_us, .delay_us = bm_delay_us,
 	.getc = bm_getc, .store = bm_store, .fetch = bm_fetch, .store_name = "the SD card (" CAL_FILE ")",
 	.ring = ring, .ring_phys = 0, .ring_bytes = sizeof ring, .barrier = bm_barrier,
+	.read_file = bm_read_file, .nn_model = "0:/nn",
 };
 
 int main(void)
