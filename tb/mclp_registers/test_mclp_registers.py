@@ -79,8 +79,10 @@ async def count_pulses(clk, sig, cycles, out):
 @cocotb.test()
 async def registers_and_pulses(dut):
     await setup(dut)
-    assert await axil_read(dut, 0x000) == 0x4D4C_0308                # map version 3, 8 channels
+    assert await axil_read(dut, 0x000) == 0x4D4C_0408                # map version 4, 8 channels
     assert await axil_read(dut, 0x048) == 12
+    assert await axil_read(dut, 0x05C) == 0xEE14                     # WIM_LEVEL 0.93
+    assert await axil_read(dut, 0x044) == 0x0BAD_0BAD
     assert await axil_read(dut, 0x054) == 4166 << 16
     assert await axil_read(dut, 0x0F0) == 0x0BAD_0BAD
     assert int(dut.spi_enable.value) == 1                      # reset value, init list runs at power-up
@@ -98,8 +100,11 @@ async def registers_and_pulses(dut):
 
     await axil_write(dut, 0x03C, 0xDEAD_BEEF)
     await axil_write(dut, 0x054, 0x1234_0071)
+    await axil_write(dut, 0x05C, 0xFFFF_C000)
     await ClockCycles(dut.clk_spi, 20)                         # worst case: one handshake in flight, then ours
     assert int(dut.dsp_wim_enter.value) == 0xDEAD_BEEF
+    assert int(dut.dsp_wim_level.value) == 0xC000
+    assert await axil_read(dut, 0x05C) == 0xC000
     assert int(dut.spi_loopback_cfg.value) == 0x1234_0071
     assert await axil_read(dut, 0x03C) == 0xDEAD_BEEF
 

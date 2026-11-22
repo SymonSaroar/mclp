@@ -81,7 +81,7 @@ module mclp_core #(
 	wire [31:0]   dsp_stab_count;
 	wire [31:0]   dsp_wim_enter;
 	wire [31:0]   dsp_wim_exit;
-	wire [31:0]   dsp_wim_settle;
+	wire [15:0]   dsp_wim_level;
 	wire [31:0]   dsp_result_decim;
 	wire [31:0]   dsp_trig_cfg;
 	wire [31:0]   dsp_trig_threshold;
@@ -209,7 +209,7 @@ module mclp_core #(
 		.dsp_stab_count(dsp_stab_count),
 		.dsp_wim_enter(dsp_wim_enter),
 		.dsp_wim_exit(dsp_wim_exit),
-		.dsp_wim_settle(dsp_wim_settle),
+		.dsp_wim_level(dsp_wim_level),
 		.dsp_result_decim(dsp_result_decim),
 		.dsp_trig_cfg(dsp_trig_cfg),
 		.dsp_trig_threshold(dsp_trig_threshold),
@@ -321,7 +321,7 @@ module mclp_core #(
 		.stab_count(dsp_stab_count),
 		.wim_enter(dsp_wim_enter),
 		.wim_exit(dsp_wim_exit),
-		.wim_settle(dsp_wim_settle),
+		.wim_level(dsp_wim_level),
 		.result_decim(dsp_result_decim),
 		.trig_cfg(dsp_trig_cfg),
 		.trig_threshold(dsp_trig_threshold),

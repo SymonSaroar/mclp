@@ -113,7 +113,7 @@ module mclp_top_tb #(
 		// ---- init list, ID: reset 0.6 ms, zero-scale calibration 4 conversions (0.83 ms), then streaming
 		ms(3);
 		rd(12'h000, v);
-		check(v == {16'h4D4C, 8'h03, 8'(N_CH)}, $sformatf("ID register 0x%08X", v));
+		check(v == {16'h4D4C, 8'h04, 8'(N_CH)}, $sformatf("ID register 0x%08X", v));
 		rd(STATUS, v);
 		check(v[0] && !v[1], "MMCM locked, init list finished");
 		for (int k = 0; k < N_CH; k++) begin

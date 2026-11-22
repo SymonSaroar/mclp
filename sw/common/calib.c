@@ -33,7 +33,7 @@ void cal_defaults(cal_t *c, int n_ch)
 	c->stab_count = 60;
 	c->wim_enter  = 0x7FFFFFFF;
 	c->wim_exit   = 0x7FFFFFFF;
-	c->wim_settle = 60;
+	c->wim_level  = 0xEE14;        /* 0.93 */
 	c->decim      = 12;
 	c->fir_fc     = 12.0;
 	c->sum        = cal_checksum(c);

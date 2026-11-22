@@ -187,7 +187,7 @@ file at every start. The bare-metal console takes the same commands and saves wi
 | `tare`, `tare clear`, `zero` | Tare at the current load; set the no-load zero point |
 | `cal ...` | Calibration, below |
 | `stab <band> <samples>` | Stability window; band in kg once spanned |
-| `wim <enter> <exit> <settle>`, `wim off` | Weigh-in-motion thresholds in kg above zero; without arguments, the last result |
+| `wim <enter> <exit> <level>`, `wim off` | Weigh-in-motion thresholds in kg above zero and the share of the peak (0 to 1) that counts; without arguments, the last result |
 | `decim <n>`, `fir <hz>` | RESULT rate 600/n Hz; FIR low-pass cutoff, 0.5 to 37 Hz |
 | `raw <tap> <n>` | Capture n records through the DMA (tap 0 ADC code, 1 CIC, 2 gain/offset, 3 trim), print CSV |
 | `faults`, `faults clear` | Sticky flags per channel: ERR, NOREF, PARITY, STALE, MISMATCH |
@@ -204,7 +204,7 @@ system is ext4 on the SD card's second partition (`/dev/mmcblk0p2`). With INITRD
 
 ### First start
 
-1. `status`: ID `4D4C0308` (register map version 3, 8 channels), clocks locked, sequencer streaming.
+1. `status`: ID `4D4C0408` (register map version 4, 8 channels), clocks locked, sequencer streaming.
 2. `bist`: the loopback emulator replaces the DOUT lines. The test checks the capture path bit for bit, then
    the fault flags of every channel. A failure points at the FPGA image.
 3. `selftest`, per channel: `OPEN` is full scale with the burnout currents on (broken cable or load cell).
@@ -238,8 +238,8 @@ commands to `mclpd`. The corner steps keep their measurements in the program's m
 - `tare`: subtracts a container until `tare clear`, across restarts.
 - `live`: weight with the stability flag. `stab <band> <samples>` sets how still the reading must be to count
   as stable.
-- `wim <enter> <exit> <settle>`: weigh-in-motion. A load passing over the platform is averaged over its
-  plateau and reported in `live` and `wim`.
+- `wim <enter> <exit> <level>`: weigh-in-motion. A load passing over the platform is averaged over the weights
+  at or above `level` times its peak (0.93 at reset) and reported in `live` and `wim`.
 - `fir <hz>`: a lower cutoff gives less noise and a slower response. `decim <n>`: RESULT rate.
 - `raw <tap> <n>`: per-channel data for analysis. `raw 1 600` records one second after the CIC.
 

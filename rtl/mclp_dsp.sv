@@ -18,7 +18,7 @@ module mclp_dsp #(
 	input  wire [31:0]        stab_count,
 	input  wire [31:0]        wim_enter,
 	input  wire [31:0]        wim_exit,
-	input  wire [31:0]        wim_settle,
+	input  wire [15:0]        wim_level,
 	input  wire [31:0]        result_decim,
 	input  wire [31:0]        trig_cfg,
 	input  wire [31:0]        trig_threshold,
@@ -258,7 +258,7 @@ module mclp_dsp #(
 		.s_data(weight),
 		.enter(wim_enter),
 		.exit_th(wim_exit),
-		.settle(wim_settle),
+		.level(wim_level),
 		.stb(wim_new),
 		.sum(wim_sum),
 		.count(wim_count)

@@ -249,7 +249,7 @@ static cJSON *settings_json(void)
 		cJSON *w = cJSON_AddObjectToObject(o, "wim");
 		cJSON_AddNumberToObject(w, "enter", c.wim_enter * k);
 		cJSON_AddNumberToObject(w, "exit", c.wim_exit * k);
-		cJSON_AddNumberToObject(w, "settle_samples", c.wim_settle);
+		cJSON_AddNumberToObject(w, "level", c.wim_level / 65536.0);
 	}
 	cJSON *off = cJSON_AddArrayToObject(o, "offset"), *g = cJSON_AddArrayToObject(o, "gain");
 	cJSON *t = cJSON_AddArrayToObject(o, "trim");

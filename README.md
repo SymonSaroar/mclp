@@ -52,10 +52,10 @@ GPL-3.0 (software in `sw/`), or under a paid commercial license. See [LICENSE](L
 
 | LUT | LUT as memory | FF | Block RAM tiles | DSP48E1 |
 |---|---|---|---|---|
-| 3,130 | 167 | 6,013 | 10 (9 RAMB36, 2 RAMB18) | 11 |
+| 3288 | 167 | 6053 | 11 (10 RAMB36, 2 RAMB18) | 13 |
 
-Timing closes in the reference design on the -1 speed grade with `aclk` at 100 MHz, `clk_spi` at 20 MHz and
-`clk_dsp` at 50 MHz. Worst negative slack: +1.83 ns.
+In the reference design on the -1 speed grade, with `aclk` at 100 MHz, `clk_spi` at 20 MHz and `clk_dsp` at
+50 MHz, all user-specified timing constraints are met: WNS +1.627 ns, WHS +0.016 ns.
 
 ## Getting started
 
@@ -160,35 +160,36 @@ on one channel: 32 at 8 channels. All channels at full scale fit in 32 bits.
 The stability flag rises after STAB_COUNT consecutive weights within ±STAB_BAND of a reference. A weight
 outside the band clears it and becomes the new reference.
 
-Weigh-in-motion starts when the weight rises above WIM_ENTER. After WIM_SETTLE samples the core sums the
-weights until the weight drops below WIM_EXIT. Result: WIM_SUM / WIM_COUNT. A load that leaves during the
-settle time gives no result.
+A weigh-in-motion load starts with the first weight above WIM_ENTER and ends at the first weight below
+WIM_EXIT. The core sums the load's weights that are at or above WIM_LEVEL times its peak, so the ramps on and off
+the platform drop out at any speed. Result: WIM_SUM / WIM_COUNT, one per load. The core holds the last 1024
+weights of a load (1.7 s); in a longer load, each older weight is compared with the peak up to 1024 weights later.
 
 ### Register space
 
 4 KB. Offsets from the base address assigned in the block design (0x43C0_0000 in the reference design).
-Register map version 3. Per-channel arrays take one 64-word block each, channel k at +4k.
+Register map version 4. Per-channel arrays take one 64-word block each, channel k at +4k.
 
 | Offset | Name | Description |
 |---|---|---|
-| 0x000 | ID | 0x4D4C_03nn. [31:16] 0x4D4C ("ML"), [15:8] register map version, [7:0] `N_CH` |
+| 0x000 | ID | 0x4D4C_04nn. [31:16] 0x4D4C ("ML"), [15:8] register map version, [7:0] `N_CH` |
 | 0x004 | CTRL | [0] enable (reset 1), [1] loopback, [5:4] raw_tap, [6] raw_enable. Self-clearing: [2] fir_reload, [3] seq_start, [7] sw_trigger, [8] fault_clear |
 | 0x008 | STATUS | [0] clocks locked, [1] seq_busy, [2] reload_busy, [3] overload, [4] stable, [5] capture_active |
 | 0x00C | IRQ_STATUS | Write 1 to clear. [0] result, [1] stable, [2] weigh-in-motion, [3] overload, [4] fault, [5] sequencer done, [6] capture done |
 | 0x010 | IRQ_ENABLE | Same bits as IRQ_STATUS |
 | 0x020 | RESULT | Weight, signed |
 | 0x024 | RESULT_SEQ | Increments with each RESULT update |
-| 0x028, 0x02C | WIM_SUM_LO, WIM_SUM_HI | Weigh-in-motion plateau sum, 64 bit |
-| 0x030 | WIM_COUNT | Weigh-in-motion plateau samples |
+| 0x028, 0x02C | WIM_SUM_LO, WIM_SUM_HI | Weigh-in-motion sum, 64 bit |
+| 0x030 | WIM_COUNT | Weigh-in-motion weights summed |
 | 0x034 | STAB_BAND | Reset 4096 |
 | 0x038 | STAB_COUNT | Reset 60 |
 | 0x03C, 0x040 | WIM_ENTER, WIM_EXIT | Reset 0x7FFF_FFFF (off) |
-| 0x044 | WIM_SETTLE | Reset 60 |
 | 0x048 | RESULT_DECIM | Reset 12 |
 | 0x04C | TRIG_CFG | [1:0] mode: 0 continuous, 1 one-shot, 2 threshold. [31:16] frames per one-shot |
 | 0x050 | TRIG_THRESHOLD | Sum level that starts a mode 2 capture |
 | 0x054 | LOOPBACK_CFG | [0] ramp, [1] inject ERR, [2] inject parity error, [9:4] channel for injection, [31:16] frame period in `clk_spi` cycles (reset 4166) |
 | 0x058 | LOOPBACK_VALUE | Constant-mode data, reset 0x123456 |
+| 0x05C | WIM_LEVEL | [15:0] share of the load's peak, Q0.16. Reset 0xEE14 (0.93) |
 | 0x200-0x2FC | FIR | 64 coefficients, word i applies to x[n-i]. Reset from `coeff/fir64.mem` |
 | 0x400-0x7FC | SEQ | Sequencer RAM, 256 words. Reset from `coeff/seq_init.mem` |
 | 0x800-0x8FC | SEQ_RESP[64] | Last XFER read per chip |
@@ -263,7 +264,7 @@ from the coefficients.
 
 ### Programming sequence
 
-1. Read ID. Check [31:8] = 0x4D4C03 and take `N_CH` from [7:0].
+1. Read ID. Check [31:8] = 0x4D4C04 and take `N_CH` from [7:0].
 2. Wait for STATUS[0] (clocks locked) and IRQ_STATUS[5] (sequencer done). After reset the core runs the
    default list on its own.
 3. Check the AD7190 ID answers: SEQ_RESP[k] bits [3:0] read 0x4 for each chip k below `N_CH`.
@@ -344,7 +345,7 @@ build/test_calib
 | `mclp_core_0` | `N_CH = 8`, registers at 0x43C0_0000 |
 | `irq_concat` | IRQ_F2P[0] DMA, IRQ_F2P[1] core |
 
-Placed and routed, the whole design takes 7,724 LUTs, 12,900 FFs, 11.5 block RAM tiles and 11 DSP48E1.
+Placed and routed, the whole design takes 7863 LUTs, 12940 FFs, 12.5 block RAM tiles and 13 DSP48E1.
 
 ### Hardware
 
@@ -455,7 +456,7 @@ At boot, `/etc/init.d/mclp` loads the UIO driver and runs `mclp init`: ID check,
 power-up list. The boot log shows the eight chip IDs. Then it starts `mclpd`. First checks on the board:
 
 ```sh
-sudo mclp status        # ID 4D4C0308, clocks locked, sequencer streaming
+sudo mclp status        # ID 4D4C0408, clocks locked, sequencer streaming
 sudo mclp bist          # loopback BIST through the whole capture path
 sudo mclp selftest      # per channel: open wire, missing reference, offset and noise
 ```

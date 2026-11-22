@@ -12,7 +12,7 @@
 #define FIR_TAPS          64
 #define SEQ_WORDS         256
 #define CIC_RATE_HZ       600.0         /* 4800 SPS / 8 */
-#define FPGA_ID_MAP       0x4D4C0300u   /* "ML" (MCLP), register map version 3; [7:0] channels */
+#define FPGA_ID_MAP       0x4D4C0400u   /* "ML" (MCLP), register map version 4; [7:0] channels */
 #define ID_CHANNELS(id)   ((unsigned)(id) & 0xFFu)
 
 /* Registers (byte offsets from MCLP_BASE) */
@@ -30,12 +30,12 @@
 #define REG_STAB_COUNT    0x038u
 #define REG_WIM_ENTER     0x03Cu
 #define REG_WIM_EXIT      0x040u
-#define REG_WIM_SETTLE    0x044u
 #define REG_RESULT_DECIM  0x048u
 #define REG_TRIG_CFG      0x04Cu
 #define REG_TRIG_THRESH   0x050u
 #define REG_LB_CFG        0x054u
 #define REG_LB_VALUE      0x058u
+#define REG_WIM_LEVEL     0x05Cu        /* Q0.16 share of the load's peak */
 #define REG_FIR(i)        (0x200u + 4u * (unsigned)(i))     /* coefficient i, 18-bit signed */
 #define REG_SEQ(i)        (0x400u + 4u * (unsigned)(i))
 /* per-channel arrays: one 64-word block each */

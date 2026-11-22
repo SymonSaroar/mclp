@@ -61,7 +61,7 @@ static void wim_apply(void)
 	int off = cal.wim_enter == 0x7FFFFFFF;
 	reg_wr(REG_WIM_ENTER, (uint32_t)(off ? 0x7FFFFFFF : clamp32(cal.zero + cal.wim_enter)));
 	reg_wr(REG_WIM_EXIT, (uint32_t)(off ? 0x7FFFFFFF : clamp32(cal.zero + cal.wim_exit)));
-	reg_wr(REG_WIM_SETTLE, cal.wim_settle);
+	reg_wr(REG_WIM_LEVEL, cal.wim_level);
 }
 
 static int fir_apply(double fc)
@@ -512,15 +512,16 @@ static void cmd_wim(int argc, char **argv)
 	} else if (argc > 3) {
 		cal.wim_enter  = clamp32(user_to_counts(atof(argv[1])));
 		cal.wim_exit   = clamp32(user_to_counts(atof(argv[2])));
-		cal.wim_settle = (uint32_t)atoi(argv[3]);
+		double lv      = atof(argv[3]);
+		cal.wim_level  = lv <= 0.0 ? 0u : lv >= 1.0 ? 0xFFFFu : (uint32_t)lround(lv * 65536.0);
 		wim_apply();
 	}
 	if (cal.wim_enter == 0x7FFFFFFF)
-		printf("weigh-in-motion off (wim <enter> <exit> <settle samples>, in %s above zero)\n", unit());
+		printf("weigh-in-motion off (wim <enter> <exit> <level>, in %s above zero, level 0 to 1)\n", unit());
 	else
-		printf("weigh-in-motion: enter above %.4g %s, exit below %.4g %s, settle %u samples\n",
+		printf("weigh-in-motion: enter above %.4g %s, exit below %.4g %s, level %.3f of the peak\n",
 		       spanned() ? cal.wim_enter * cal.kg_per_count : cal.wim_enter, unit(),
-		       spanned() ? cal.wim_exit * cal.kg_per_count : cal.wim_exit, unit(), (unsigned)cal.wim_settle);
+		       spanned() ? cal.wim_exit * cal.kg_per_count : cal.wim_exit, unit(), cal.wim_level / 65536.0);
 	print_wim();
 }
 
@@ -809,7 +810,7 @@ static const struct {
 	{ "zero",     "",                        "set the zero point at the current reading (no load)", cmd_zero },
 	{ "cal",      "[sub]",                   "zero | corner <i> | solve <kg> | span <kg> | reset | save | load", cmd_cal },
 	{ "stab",     "[band samples]",          "stability window (band in kg once spanned)", cmd_stab },
-	{ "wim",      "[enter exit settle|off]", "weigh-in-motion thresholds and last result", cmd_wim },
+	{ "wim",      "[enter exit level|off]", "weigh-in-motion thresholds and last result", cmd_wim },
 	{ "decim",    "[n]",                     "RESULT rate = 600 Hz / n", cmd_decim },
 	{ "fir",      "[hz]",                    "FIR low-pass cutoff, 0.5 to 37 Hz", cmd_fir },
 	{ "raw",      "<tap> <n>",               "capture n records through the DMA and print them", cmd_raw },
