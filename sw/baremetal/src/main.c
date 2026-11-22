@@ -11,7 +11,7 @@
 #include "xil_mmu.h"
 #include "xparameters.h"
 #include "xpseudo_asm.h"
-#include "xtime_l.h"
+#include "xiltimer.h"
 #include "xuartps_hw.h"
 
 #include "mclp_ops.h"
