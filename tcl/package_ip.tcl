@@ -74,7 +74,7 @@ proc bus_param {busif name value} {
 bus_param aresetn POLARITY    ACTIVE_LOW
 bus_param irq     SENSITIVITY LEVEL_HIGH
 
-# Register window: 4 KB, address block reg0 (the block design assigns it at 0x43C0_0000)
+# Register window: 64 KB, address block reg0 (the block design assigns it at 0x43C0_0000)
 set mm [ipx::get_memory_maps s_axi -of_objects $core]
 if {$mm eq ""} {
 	set mm [ipx::add_memory_map s_axi $core]
@@ -82,7 +82,7 @@ if {$mm eq ""} {
 }
 set blk [ipx::get_address_blocks reg0 -of_objects $mm]
 if {$blk eq ""} { set blk [ipx::add_address_block reg0 $mm] }
-set_property -dict {range 4096 width 32 usage register} $blk
+set_property -dict {range 65536 width 32 usage register} $blk
 
 # N_CH: 1 to 64 AD7190 chips; spi_sdi is N_CH bits wide
 set_property -dict [list \
@@ -92,6 +92,14 @@ set_property -dict [list \
 	value_validation_range_minimum 1 \
 	value_validation_range_maximum 64 \
 ] [ipx::get_user_parameters N_CH -of_objects $core]
+
+# USE_NN: 1 includes the inference engine and its model memories, 0 leaves them out
+set_property -dict [list \
+	display_name                  {Inference engine} \
+	value                         1 \
+	value_validation_type         list \
+	value_validation_list         {0 1} \
+] [ipx::get_user_parameters USE_NN -of_objects $core]
 
 # The RAM images must travel with the core: XPM MEMORY_INIT_FILE finds them by name
 foreach grp [ipx::get_file_groups -of_objects $core] {

@@ -18,7 +18,9 @@ static const struct { unsigned off; const char *name; } REGS[] = {
 	{ REG_STAB_BAND, "STAB_BAND" }, { REG_STAB_COUNT, "STAB_COUNT" }, { REG_WIM_ENTER, "WIM_ENTER" },
 	{ REG_WIM_EXIT, "WIM_EXIT" }, { REG_RESULT_DECIM, "RESULT_DECIM" },
 	{ REG_TRIG_CFG, "TRIG_CFG" }, { REG_TRIG_THRESH, "TRIG_THRESH" }, { REG_LB_CFG, "LOOPBACK_CFG" },
-	{ REG_LB_VALUE, "LOOPBACK_VALUE" }, { REG_WIM_LEVEL, "WIM_LEVEL" },
+	{ REG_LB_VALUE, "LOOPBACK_VALUE" }, { REG_WIM_LEVEL, "WIM_LEVEL" }, { REG_NN_CTRL, "NN_CTRL" },
+	{ REG_NN_STATUS, "NN_STATUS" }, { REG_NN_SEQ, "NN_SEQ" }, { REG_NN_EST, "NN_EST" }, { REG_NN_CORR, "NN_CORR" },
+	{ REG_NN_CYCLES, "NN_CYCLES" },
 };
 
 static void bits(char *s, uint32_t v, const char *const *names, int n)
@@ -35,7 +37,8 @@ static void reg_name(uint32_t addr, char *name, char *what, uint32_t v)
 	static const char *const CTRL_B[] = { "enable", "loopback", "FIR_RELOAD", "SEQ_START", 0, 0, "raw_enable",
 	                                      "SW_TRIGGER", "FAULT_CLEAR" };
 	static const char *const ST_B[]   = { "locked", "seq_busy", "reload_busy", "overload", "stable", "capture" };
-	static const char *const IRQ_B[]  = { "result", "stable", "wim", "overload", "fault", "seq_done", "capture_done" };
+	static const char *const IRQ_B[]  = { "result", "stable", "wim", "overload", "fault", "seq_done", "capture_done",
+	                                      "nn_done" };
 	static const char *const FLT_B[]  = { "ERR", "NOREF", "PARITY", "STALE", "MISMATCH" };
 	static const char *const OPS[]    = { "END", "XFER", "SYNC", "WAIT_US", "WAIT_RDY", "STREAM" };
 	unsigned off = addr - MCLP_BASE;
@@ -52,7 +55,7 @@ static void reg_name(uint32_t addr, char *name, char *what, uint32_t v)
 		if (off == S2MM_DMASR) bits(what, v, SR_B, 15);
 		return;
 	}
-	if (addr < MCLP_BASE || off >= 0x1000u) {
+	if (addr < MCLP_BASE || off >= 0x8000u) {
 		sprintf(name, "?");
 		return;
 	}
@@ -65,8 +68,9 @@ static void reg_name(uint32_t addr, char *name, char *what, uint32_t v)
 			} else if (off == REG_STATUS) {
 				bits(what, v, ST_B, 6);
 			} else if (off == REG_IRQ_STATUS || off == REG_IRQ_ENABLE) {
-				bits(what, v, IRQ_B, 7);
-			} else if (off == REG_RESULT || off == REG_STAB_BAND || off == REG_WIM_ENTER || off == REG_WIM_EXIT) {
+				bits(what, v, IRQ_B, 8);
+			} else if (off == REG_RESULT || off == REG_STAB_BAND || off == REG_WIM_ENTER || off == REG_WIM_EXIT ||
+			           off == REG_NN_EST || off == REG_NN_CORR) {
 				sprintf(what, "%ld", (long)(int32_t)v);
 			} else if (off == REG_LB_CFG) {
 				sprintf(what, "%s%s%sch=%u period=%u", v & LB_RAMP ? "ramp " : "", v & LB_INJECT_ERR ? "inject_ERR " : "",
@@ -102,6 +106,13 @@ static void reg_name(uint32_t addr, char *name, char *what, uint32_t v)
 			sprintf(what, "%ld", (long)(int32_t)v);
 		else if (a == 4)
 			bits(what, v, FLT_B, 5);
+	} else if (off >= 0x2000u && off < 0x2100u) {
+		sprintf(name, "NN_LAYER[%u]", (off - 0x2000u) / 4u);
+	} else if (off >= 0x3000u && off < 0x3400u) {
+		sprintf(name, "NN_BIAS[%u]", (off - 0x3000u) / 4u);
+		sprintf(what, "%ld", (long)(int32_t)v);
+	} else if (off >= 0x4000u) {
+		sprintf(name, "NN_WEIGHT[%u]", (off - 0x4000u) / 4u);
 	} else {
 		sprintf(name, "?");
 	}

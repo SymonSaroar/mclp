@@ -90,6 +90,7 @@
 			clocks = <&clkc 15>, <&misc_clk_0>, <&misc_clk_1>;
 			xlnx,edk-iptype = "PERIPHERAL";
 			status = "okay";
+			xlnx,use-nn = <1>;
 			clock-names = "aclk" , "clk_dsp" , "clk_spi";
 			interrupt-names = "irq";
 			xlnx,name = "mclp_core_0";

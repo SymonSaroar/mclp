@@ -6,13 +6,15 @@
 // Clock domains: aclk for the AXI4-Lite registers and the raw record stream (100 MHz in the reference
 // design), clk_spi (20 MHz) for the AD7190 front end, clk_dsp (50 MHz) for processing. Control and status
 // cross in mclp_registers, the sample and record streams through the two XPM FIFOs here.
-// N_CH (1 to 64) AD7190 chips, one per load cell; the ID register reports the number.
+// N_CH (1 to 64) AD7190 chips, one per load cell; the ID register reports the number. USE_NN = 1 adds the
+// inference engine (mclp_nn in mclp_dsp) and its registers and model memories at 0x1000 to 0x7FFF.
 // Resets: aresetn resets the aclk domain; clk_spi and clk_dsp stay in reset while clk_locked is low.
 // clk_locked must also be low while aresetn is (the reference design resets its MMCM with
 // aresetn); synchronize both into each domain if a design needs them independent.
 ////////////////////////////////////////////////////////////////////////////////
 module mclp_core #(
-	parameter integer N_CH = 8              // channels, 1 to 64
+	parameter integer N_CH   = 8,           // channels, 1 to 64
+	parameter integer USE_NN = 1            // inference engine, 0 or 1
 ) (
 	// Clocks and resets
 	input  wire         aclk,
@@ -21,8 +23,8 @@ module mclp_core #(
 	input  wire         clk_dsp,            // 50 MHz
 	input  wire         clk_locked,         // clk_spi and clk_dsp running; asynchronous
 
-	// Register file (AXI4-Lite, 4 KB, aclk)
-	input  wire [11:0]  s_axi_awaddr,
+	// Register file (AXI4-Lite, 64 KB, aclk)
+	input  wire [15:0]  s_axi_awaddr,
 	input  wire [2:0]   s_axi_awprot,
 	input  wire         s_axi_awvalid,
 	output wire         s_axi_awready,
@@ -33,7 +35,7 @@ module mclp_core #(
 	output wire [1:0]   s_axi_bresp,
 	output wire         s_axi_bvalid,
 	input  wire         s_axi_bready,
-	input  wire [11:0]  s_axi_araddr,
+	input  wire [15:0]  s_axi_araddr,
 	input  wire [2:0]   s_axi_arprot,
 	input  wire         s_axi_arvalid,
 	output wire         s_axi_arready,
@@ -107,6 +109,18 @@ module mclp_core #(
 	wire          dsp_reload_busy;
 	wire          dsp_capture_active;
 	wire [5*N_CH-1:0] dsp_faults;
+	wire          dsp_nn_enable;
+	wire [5:0]    dsp_nn_lay_addr;
+	wire [31:0]   dsp_nn_lay_q;
+	wire [7:0]    dsp_nn_bias_addr;
+	wire [31:0]   dsp_nn_bias_q;
+	wire [11:0]   dsp_nn_wt_addr;
+	wire [31:0]   dsp_nn_wt_q;
+	wire          dsp_nn_done;
+	wire [31:0]   dsp_nn_est;
+	wire [31:0]   dsp_nn_corr;
+	wire [31:0]   dsp_nn_cycles;
+	wire          dsp_nn_busy;
 
 	// Sample stream (clk_spi -> clk_dsp) and record stream (clk_dsp -> aclk)
 	wire          fe_tvalid;
@@ -163,7 +177,11 @@ module mclp_core #(
 		.N_CH(N_CH),
 		.FIR_INIT_FILE("fir64.mem"),
 		.SEQ_INIT_FILE("seq_init.mem"),
-		.UNITY_INIT_FILE("unity64.mem")
+		.UNITY_INIT_FILE("unity64.mem"),
+		.USE_NN(USE_NN),
+		.NN_LAYERS_INIT_FILE("nn_layers.mem"),
+		.NN_BIAS_INIT_FILE("nn_bias.mem"),
+		.NN_WEIGHTS_INIT_FILE("nn_weights.mem")
 	) mclp_registers_0 (
 		// AXI4-Lite interface
 		.s_axi_aclk(aclk),
@@ -234,7 +252,19 @@ module mclp_core #(
 		.dsp_overload(dsp_overload),
 		.dsp_reload_busy(dsp_reload_busy),
 		.dsp_capture_active(dsp_capture_active),
-		.dsp_faults(dsp_faults)
+		.dsp_faults(dsp_faults),
+		.dsp_nn_enable(dsp_nn_enable),
+		.dsp_nn_lay_addr(dsp_nn_lay_addr),
+		.dsp_nn_lay_q(dsp_nn_lay_q),
+		.dsp_nn_bias_addr(dsp_nn_bias_addr),
+		.dsp_nn_bias_q(dsp_nn_bias_q),
+		.dsp_nn_wt_addr(dsp_nn_wt_addr),
+		.dsp_nn_wt_q(dsp_nn_wt_q),
+		.dsp_nn_done(dsp_nn_done),
+		.dsp_nn_est(dsp_nn_est),
+		.dsp_nn_corr(dsp_nn_corr),
+		.dsp_nn_cycles(dsp_nn_cycles),
+		.dsp_nn_busy(dsp_nn_busy)
 	);
 
 /////////////////////////////////////////////////////////////////////////////
@@ -313,7 +343,8 @@ module mclp_core #(
 //Processing (clk_dsp)
 /////////////////////////////////////////////////////////////////////////////
 	mclp_dsp #(
-		.N_CH(N_CH)
+		.N_CH(N_CH),
+		.USE_NN(USE_NN)
 	) mclp_dsp_0 (
 		.clk(clk_dsp),
 		.rst(rst_dsp),
@@ -354,7 +385,19 @@ module mclp_core #(
 		.m_valid(rec_tvalid),
 		.m_data(rec_tdata),
 		.m_last(rec_tlast),
-		.raw_full(rec_prog_full)
+		.raw_full(rec_prog_full),
+		.nn_enable(dsp_nn_enable),
+		.nn_lay_addr(dsp_nn_lay_addr),
+		.nn_lay_q(dsp_nn_lay_q),
+		.nn_bias_addr(dsp_nn_bias_addr),
+		.nn_bias_q(dsp_nn_bias_q),
+		.nn_wt_addr(dsp_nn_wt_addr),
+		.nn_wt_q(dsp_nn_wt_q),
+		.nn_done(dsp_nn_done),
+		.nn_est(dsp_nn_est),
+		.nn_corr(dsp_nn_corr),
+		.nn_cycles(dsp_nn_cycles),
+		.nn_busy(dsp_nn_busy)
 	);
 
 	// CDC FIFO 2: raw records clk_dsp -> aclk, into the DMA. Records start only below the

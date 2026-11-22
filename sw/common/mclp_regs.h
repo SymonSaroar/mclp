@@ -12,7 +12,7 @@
 #define FIR_TAPS          64
 #define SEQ_WORDS         256
 #define CIC_RATE_HZ       600.0         /* 4800 SPS / 8 */
-#define FPGA_ID_MAP       0x4D4C0400u   /* "ML" (MCLP), register map version 4; [7:0] channels */
+#define FPGA_ID_MAP       0x4D4C0500u   /* "ML" (MCLP), register map version 5; [7:0] channels */
 #define ID_CHANNELS(id)   ((unsigned)(id) & 0xFFu)
 
 /* Registers (byte offsets from MCLP_BASE) */
@@ -44,6 +44,16 @@
 #define REG_OFFSET(ch)    (0xA00u + 4u * (unsigned)(ch))    /* CIC units */
 #define REG_TRIM(ch)      (0xB00u + 4u * (unsigned)(ch))    /* Q2.30 */
 #define REG_FAULT(ch)     (0xC00u + 4u * (unsigned)(ch))
+/* inference engine (USE_NN = 1; without it the window reads 0x0BAD_0BAD) */
+#define REG_NN_CTRL       0x1000u       /* [0] enable: run after each weigh-in-motion result */
+#define REG_NN_STATUS     0x1004u       /* [0] busy */
+#define REG_NN_SEQ        0x1008u       /* increments with each inference */
+#define REG_NN_EST        0x100Cu       /* corrected estimate, weight counts */
+#define REG_NN_CORR       0x1010u       /* correction to WIM_SUM / WIM_COUNT, Q0.20 */
+#define REG_NN_CYCLES     0x1014u       /* clk_dsp cycles of the last inference */
+#define REG_NN_LAYER(i)   (0x2000u + 4u * (unsigned)(i))    /* 64 layer words */
+#define REG_NN_BIAS(i)    (0x3000u + 4u * (unsigned)(i))    /* 256 biases */
+#define REG_NN_WEIGHT(i)  (0x4000u + 4u * (unsigned)(i))    /* 4096 words of four int8 weights */
 
 /* CTRL: level bits read back, pulse bits read as 0 */
 #define CTRL_ENABLE       (1u << 0)
@@ -72,6 +82,7 @@
 #define IRQ_FAULT         (1u << 4)     /* new fault bit */
 #define IRQ_SEQ_DONE      (1u << 5)
 #define IRQ_CAPTURE_DONE  (1u << 6)
+#define IRQ_NN_DONE       (1u << 7)
 
 /* FAULT[ch], sticky until CTRL_FAULT_CLEAR */
 #define FLT_ERR           (1u << 0)     /* over-range, open wire with burnout, missing reference */
