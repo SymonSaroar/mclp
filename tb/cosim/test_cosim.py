@@ -242,7 +242,7 @@ if cocotb:
         assert "backend co-simulation" in out
 
         out = await client(bench, srv, port, "status")
-        assert "FPGA ID 4D4C0308, MMCM locked, sequencer streaming" in out
+        assert "FPGA ID 4D4C0408, MMCM locked, sequencer streaming" in out
         assert re.search(r"RD STATUS +-> 0x00000001 +locked", out), "trace decodes STATUS"
 
         out = await client(bench, srv, port, "init")
