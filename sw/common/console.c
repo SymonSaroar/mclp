@@ -312,10 +312,12 @@ static void print_nn(void)
 		printf("no inference result yet\n");
 		return;
 	}
+	int32_t  est = (int32_t)reg_rd(REG_NN_EST), corr = (int32_t)reg_rd(REG_NN_CORR);
+	uint32_t cycles = reg_rd(REG_NN_CYCLES);         /* all reads first: trace lines stay off the result line */
 	printf("inference %u:", (unsigned)seq);
-	print_weight((int32_t)reg_rd(REG_NN_EST));
-	printf(", correction %+.2f%% of the weigh-in-motion result, %.0f us\n",
-	       (int32_t)reg_rd(REG_NN_CORR) / 1048576.0 * 100.0, reg_rd(REG_NN_CYCLES) / DSP_CLK_MHZ);
+	print_weight(est);
+	printf(", correction %+.2f%% of the weigh-in-motion result, %.0f us\n", corr / 1048576.0 * 100.0,
+	       cycles / DSP_CLK_MHZ);
 }
 
 /* ------------------------------------------------------------------ commands */
