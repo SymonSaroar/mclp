@@ -16,9 +16,9 @@ static const struct { unsigned off; const char *name; } REGS[] = {
 	{ REG_IRQ_ENABLE, "IRQ_ENABLE" }, { REG_RESULT, "RESULT" }, { REG_RESULT_SEQ, "RESULT_SEQ" },
 	{ REG_WIM_SUM_LO, "WIM_SUM_LO" }, { REG_WIM_SUM_HI, "WIM_SUM_HI" }, { REG_WIM_COUNT, "WIM_COUNT" },
 	{ REG_STAB_BAND, "STAB_BAND" }, { REG_STAB_COUNT, "STAB_COUNT" }, { REG_WIM_ENTER, "WIM_ENTER" },
-	{ REG_WIM_EXIT, "WIM_EXIT" }, { REG_WIM_SETTLE, "WIM_SETTLE" }, { REG_RESULT_DECIM, "RESULT_DECIM" },
+	{ REG_WIM_EXIT, "WIM_EXIT" }, { REG_RESULT_DECIM, "RESULT_DECIM" },
 	{ REG_TRIG_CFG, "TRIG_CFG" }, { REG_TRIG_THRESH, "TRIG_THRESH" }, { REG_LB_CFG, "LOOPBACK_CFG" },
-	{ REG_LB_VALUE, "LOOPBACK_VALUE" },
+	{ REG_LB_VALUE, "LOOPBACK_VALUE" }, { REG_WIM_LEVEL, "WIM_LEVEL" },
 };
 
 static void bits(char *s, uint32_t v, const char *const *names, int n)

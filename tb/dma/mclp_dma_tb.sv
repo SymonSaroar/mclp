@@ -134,7 +134,7 @@ module mclp_dma_tb;
 		`PS.fpga_soft_reset(32'h0);
 		#3_000_000;
 		rd(REGS, v);
-		check(v == 32'h4D4C_0308, "ID register over M_AXI_GP0");
+		check(v == 32'h4D4C_0408, "ID register over M_AXI_GP0");
 		for (int k = 0; k < 8; k++) begin
 			rd(SEQRESP + 4 * k, v);
 			check(v[3:0] == 4'h4, $sformatf("AD7190 %0d ID", k));

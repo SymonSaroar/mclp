@@ -64,7 +64,7 @@ module mclp_registers #(
 		output wire [31:0]   dsp_stab_count,
 		output wire [31:0]   dsp_wim_enter,
 		output wire [31:0]   dsp_wim_exit,
-		output wire [31:0]   dsp_wim_settle,
+		output wire [15:0]   dsp_wim_level,
 		output wire [31:0]   dsp_result_decim,
 		output wire [31:0]   dsp_trig_cfg,
 		output wire [31:0]   dsp_trig_threshold,
@@ -107,12 +107,12 @@ module mclp_registers #(
 	localparam [11:0] REG_RW_0014 = 12'h038;   // STAB_COUNT
 	localparam [11:0] REG_RW_0015 = 12'h03C;   // WIM_ENTER
 	localparam [11:0] REG_RW_0016 = 12'h040;   // WIM_EXIT
-	localparam [11:0] REG_RW_0017 = 12'h044;   // WIM_SETTLE
 	localparam [11:0] REG_RW_0018 = 12'h048;   // RESULT_DECIM
 	localparam [11:0] REG_RW_0019 = 12'h04C;   // TRIG_CFG
 	localparam [11:0] REG_RW_0020 = 12'h050;   // TRIG_THRESHOLD
 	localparam [11:0] REG_RW_0021 = 12'h054;   // LOOPBACK_CFG
 	localparam [11:0] REG_RW_0022 = 12'h058;   // LOOPBACK_VALUE
+	localparam [11:0] REG_RW_0023 = 12'h05C;   // WIM_LEVEL
 	//Memory-windows-------------------------------------------------------------------------------------
 	localparam [11:0] MEM_FIR     = 12'h200;   // 0x200-0x2FC, 64 words, reload order
 	localparam [11:0] MEM_SEQ     = 12'h400;   // 0x400-0x7FC, 256 words
@@ -125,7 +125,7 @@ module mclp_registers #(
 	localparam [11:0] MEM_FAULT   = 12'hC00;   // sticky FLT bits [4:0]
 	//---------------------------------------------------------------------------------------------------
 	localparam [7:0]  N_CH_ID     = N_CH;
-	localparam [31:0] FPGA_ID     = {16'h4D4C, 8'h03, N_CH_ID};   // "ML" (MCLP), register map version 3, channels
+	localparam [31:0] FPGA_ID     = {16'h4D4C, 8'h04, N_CH_ID};   // "ML" (MCLP), register map version 4, channels
 	localparam [31:0] READ_BAD    = 32'h0BAD_0BAD;
 
 	localparam [2:0] SEL_REG    = 3'd0;
@@ -168,7 +168,7 @@ module mclp_registers #(
 	reg  [31:0] reg_stab_count     = 32'd60;          // 100 ms at 600 Hz
 	reg  [31:0] reg_wim_enter      = 32'h7FFF_FFFF;   // off until software sets it
 	reg  [31:0] reg_wim_exit       = 32'h7FFF_FFFF;
-	reg  [31:0] reg_wim_settle     = 32'd60;
+	reg  [15:0] reg_wim_level      = 16'hEE14;        // 0.93, Q0.16
 	reg  [31:0] reg_result_decim   = 32'd12;          // 600 Hz / 12 = 50 Hz
 	reg  [31:0] reg_trig_cfg       = 32'd0;
 	reg  [31:0] reg_trig_threshold = 32'd0;
@@ -279,7 +279,7 @@ module mclp_registers #(
 			reg_stab_count     <= 32'd60;
 			reg_wim_enter      <= 32'h7FFF_FFFF;
 			reg_wim_exit       <= 32'h7FFF_FFFF;
-			reg_wim_settle     <= 32'd60;
+			reg_wim_level      <= 16'hEE14;
 			reg_result_decim   <= 32'd12;
 			reg_trig_cfg       <= 32'd0;
 			reg_trig_threshold <= 32'd0;
@@ -304,12 +304,12 @@ module mclp_registers #(
 				REG_RW_0014: reg_stab_count     <= bram_wrdata_a;
 				REG_RW_0015: reg_wim_enter      <= bram_wrdata_a;
 				REG_RW_0016: reg_wim_exit       <= bram_wrdata_a;
-				REG_RW_0017: reg_wim_settle     <= bram_wrdata_a;
 				REG_RW_0018: reg_result_decim   <= bram_wrdata_a;
 				REG_RW_0019: reg_trig_cfg       <= bram_wrdata_a;
 				REG_RW_0020: reg_trig_threshold <= bram_wrdata_a;
 				REG_RW_0021: reg_loopback_cfg   <= bram_wrdata_a;
 				REG_RW_0022: reg_loopback_value <= bram_wrdata_a;
+				REG_RW_0023: reg_wim_level      <= bram_wrdata_a[15:0];
 				default: ;
 			endcase
 		end else if (bram_rd) begin
@@ -330,12 +330,12 @@ module mclp_registers #(
 				REG_RW_0014: reg_rddata <= reg_stab_count;
 				REG_RW_0015: reg_rddata <= reg_wim_enter;
 				REG_RW_0016: reg_rddata <= reg_wim_exit;
-				REG_RW_0017: reg_rddata <= reg_wim_settle;
 				REG_RW_0018: reg_rddata <= reg_result_decim;
 				REG_RW_0019: reg_rddata <= reg_trig_cfg;
 				REG_RW_0020: reg_rddata <= reg_trig_threshold;
 				REG_RW_0021: reg_rddata <= reg_loopback_cfg;
 				REG_RW_0022: reg_rddata <= reg_loopback_value;
+				REG_RW_0023: reg_rddata <= {16'd0, reg_wim_level};
 				default:     reg_rddata <= hit_resp  && idx < N_CH ? resp_pad[32*idx +: 32] :
 				                         hit_fault && idx < N_CH ? {27'd0, faults_pad[5*idx +: 5]} : READ_BAD;
 			endcase
@@ -603,13 +603,13 @@ module mclp_registers #(
 	reg  [57:0]  spi_cfg_hold = 58'd0;
 	reg          spi_cfg_send = 1'b0;
 	wire         spi_cfg_rcv;
-	reg  [258:0] dsp_cfg_hold = 259'd0;
+	reg  [242:0] dsp_cfg_hold = 243'd0;
 	reg          dsp_cfg_send = 1'b0;
 	wire         dsp_cfg_rcv;
 
 	always @(posedge s_axi_aclk) begin
 		if (!spi_cfg_send) spi_cfg_hold <= {reg_enable, reg_loopback, reg_loopback_cfg, reg_loopback_value[23:0]};
-		if (!dsp_cfg_send) dsp_cfg_hold <= {reg_stab_band, reg_stab_count, reg_wim_enter, reg_wim_exit, reg_wim_settle,
+		if (!dsp_cfg_send) dsp_cfg_hold <= {reg_stab_band, reg_stab_count, reg_wim_enter, reg_wim_exit, reg_wim_level,
 		                                    reg_result_decim, reg_trig_cfg, reg_trig_threshold, reg_raw_tap, reg_raw_enable};
 		spi_cfg_send <= !spi_cfg_rcv;
 		dsp_cfg_send <= !dsp_cfg_rcv;
@@ -654,9 +654,9 @@ module mclp_registers #(
 		.INIT_SYNC_FF(1),
 		.SIM_ASSERT_CHK(0),
 		.SRC_SYNC_FF(2),
-		.WIDTH(259)
+		.WIDTH(243)
 	) xpm_cdc_dsp_cfg_inst (
-		.dest_out({dsp_stab_band, dsp_stab_count, dsp_wim_enter, dsp_wim_exit, dsp_wim_settle, dsp_result_decim,
+		.dest_out({dsp_stab_band, dsp_stab_count, dsp_wim_enter, dsp_wim_exit, dsp_wim_level, dsp_result_decim,
 		           dsp_trig_cfg, dsp_trig_threshold, dsp_raw_tap, dsp_raw_enable}),
 		.dest_req(),
 		.src_rcv(dsp_cfg_rcv),
